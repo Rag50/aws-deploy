@@ -38,6 +38,7 @@ app.post('/api/process-video', upload.single('video'), async (req, res) => {
     const videoPath = req.file.path
     console.log(videoPath);
     const outputPath = `${videoPath}_output.mp4`
+    const watermarkPath = path.join(__dirname, 'watermarks', 'watermark.svg');
 
 
     const transcription = await transcribeVideo(videoPath)
@@ -55,13 +56,28 @@ app.post('/api/process-video', upload.single('video'), async (req, res) => {
 
 
     const outputFilePath = path.join(__dirname, 'uploads', `${req.file.filename}_output.mp4`);
-    const ffmpegCommand = `ffmpeg -i ${videoPath} -vf "subtitles=${srtFilePath}" ${outputFilePath}`;
-    require('child_process').execSync(ffmpegCommand);
+    // const ffmpegCommand = `ffmpeg -i ${videoPath} -vf "subtitles=${srtFilePath}" ${outputFilePath}`;
 
-    fs.unlinkSync(srtFilePath);
+    // require('child_process').execSync(ffmpegCommand);
+    let ffmpegCommand;
+    if (watermarkPath) {
+      ffmpegCommand = `ffmpeg -i ${videoPath} -i ${watermarkPath} -filter_complex "[1:v] scale=254:118.54 [watermark]; [0:v][watermark] overlay=135:426,subtitles=${srtFilePath}" -c:a copy ${outputFilePath}`;
+    } else {
+      ffmpegCommand = `ffmpeg -i ${videoPath} -vf "subtitles=${srtFilePath}" -c:a copy ${outputFilePath}`;
+    }
+    exec(ffmpegCommand, (error, stdout, stderr) => {
+      if (error) {
+        throw error;
+      }
+
+      fs.unlinkSync(srtFilePath);
+
+      res.json({ videoUrl: `http://localhost:3000/uploads/${req.file.filename}_output.mp4`, transcription: formatedcaptions, rawData: transcription.words, inputFile: videoPath, lang: transcription.language });
+    });
 
 
-    res.json({ videoUrl: `http://localhost:3000/uploads/${req.file.filename}_output.mp4`, transcription: formatedcaptions, rawData: transcription.words, inputFile: videoPath, lang: transcription.language });
+
+
   } catch (error) {
     res.status(500).json({ error: error.message })
   }
