@@ -13,7 +13,7 @@ var slug = require('slug');
 // const upload = multer({ dest: 'uploads/' })
 const OpenAI = require('openai');
 const openai = new OpenAI({
-  apiKey: "key ",
+  apiKey: "key",
 });
 
 app.use(cors());
@@ -44,41 +44,28 @@ app.post('/api/process-video', upload.single('video'), async (req, res) => {
     const transcription = await transcribeVideo(videoPath)
     console.log(transcription);
     const srtContent = generateSRT(transcription.words);
+    let outputSrt
 
-    const hindi = await convertHindiToHinglish(srtContent, transcription.language);
-    console.log(hindi);
-
-    const formatedcaptions = formatSubtitle(hindi);
-
-
-    const srtFilePath = path.join(__dirname, 'uploads', `${req.file.filename}.srt`);
-    fs.writeFileSync(srtFilePath, hindi);
-
-
-    const outputFilePath = path.join(__dirname, 'uploads', `${req.file.filename}_output.mp4`);
-    // const ffmpegCommand = `ffmpeg -i ${videoPath} -vf "subtitles=${srtFilePath}" ${outputFilePath}`;
-
-    // require('child_process').execSync(ffmpegCommand);
-    let ffmpegCommand;
-    if (watermarkPath) {
-      ffmpegCommand = `ffmpeg -i ${videoPath} -i ${watermarkPath} -filter_complex "[1:v] scale=254:118.54 [watermark]; [0:v][watermark] overlay=135:426,subtitles=${srtFilePath}" -c:a copy ${outputFilePath}`;
+    if (transcription.language == "english") {
+      outputSrt = srtContent
     } else {
-      ffmpegCommand = `ffmpeg -i ${videoPath} -vf "subtitles=${srtFilePath}" -c:a copy ${outputFilePath}`;
+      outputSrt = await convertHindiToHinglish(srtContent, transcription.language);
     }
-    exec(ffmpegCommand, (error, stdout, stderr) => {
-      if (error) {
-        throw error;
-      }
 
-      fs.unlinkSync(srtFilePath);
-
-      res.json({ videoUrl: `http://localhost:3000/uploads/${req.file.filename}_output.mp4`, transcription: formatedcaptions, rawData: transcription.words, inputFile: videoPath, lang: transcription.language });
-    });
+    const formatedcaptions = formatSubtitle(outputSrt);
 
 
+    const srtFilePath = path.join(__dirname, 'uploads', `${req.file.filename.replace('.mp4', '')}.srt`);
+    fs.writeFileSync(srtFilePath, outputSrt);
 
 
-  } catch (error) {
+    res.json({ transcription: formatedcaptions, rawData: transcription.words, inputFile: videoPath, lang: transcription.language, srt: srtFilePath });
+
+
+
+
+  }
+  catch (error) {
     res.status(500).json({ error: error.message })
   }
 })
@@ -87,20 +74,20 @@ app.post('/api/process-video', upload.single('video'), async (req, res) => {
 app.post('/api/change-style', upload.single('video'), async (req, res) => {
 
   try {
-    const { videoUrl, font, color, xPosition, yPosition, raw, lang } = req.body;
-    console.log(videoUrl, font, color, xPosition, yPosition, raw, lang);
+    const { inputVideo, font, color, xPosition, yPosition, raw } = req.body;
+    console.log(inputVideo, font, color, xPosition, yPosition, raw);
     const watermarkPath = path.join(__dirname, 'watermarks', 'watermark.svg');
 
 
-    if (!videoUrl || !font || !color || !xPosition || !yPosition || !raw) {
+    if (!inputVideo || !font || !color || !xPosition || !yPosition || !raw) {
       return res.status(400).json({ error: 'Missing required fields in the request body' });
     }
-    const videoPath = path.join(__dirname, videoUrl);
+    const videoPath = path.join(__dirname, inputVideo);
     const srtContent = generateSRT(raw);
-    const hindi = await convertHindiToHinglish(srtContent, lang);
+    // const hindi = await convertHindiToHinglish(srtContent, lang);
 
     const srtFilePath = path.join(__dirname, 'uploads', `temp.srt`);
-    fs.writeFileSync(srtFilePath, hindi);
+    fs.writeFileSync(srtFilePath, srtContent);
 
 
     const outputFilePath = videoPath.replace('.mp4', `l.mp4_output.mp4`);
@@ -198,14 +185,15 @@ async function transcribeVideo(videoPath) {
 }
 
 
+
 async function convertHindiToHinglish(changetext, language) {
   try {
     const completion = await openai.chat.completions.create({
       messages: [
         { role: "system", content: "You are a helpful assistant." },
-        { role: "user", content: `Translate the following ${language} text to Hinglish. If the  ${language} is already in English, do not change it. Do not add any comments, only provide the translation:\n\n${changetext}` }
+        { role: "user", content: `Convert the following Hindi text to Hinglish. Provide only the translation:\n\n${changetext}` }
       ],
-      model: "gpt-4o",
+      model: "gpt-3.5-turbo-0125",
     });
 
     const hinglishText = completion.choices[0].message.content;
@@ -214,6 +202,7 @@ async function convertHindiToHinglish(changetext, language) {
     console.error("Error translating text:", error);
   }
 }
+
 
 
 function generateSRT(words) {
