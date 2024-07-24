@@ -52,7 +52,11 @@ app.post('/api/process-video', upload.single('video'), async (req, res) => {
       outputSrt = await convertHindiToHinglish(srtContent, transcription.language);
     }
 
+    console.log(outputSrt, "main one")
+
     const formatedcaptions = formatSubtitle(outputSrt);
+
+    console.log(formatedcaptions, 'formated');
 
 
     const srtFilePath = path.join(__dirname, 'uploads', `${req.file.filename.replace('.mp4', '')}.srt`);
@@ -72,27 +76,27 @@ app.post('/api/process-video', upload.single('video'), async (req, res) => {
 
 
 app.post('/api/change-style', upload.single('video'), async (req, res) => {
+  console.log('change hit');
 
   try {
-    const { inputVideo, font, color, xPosition, yPosition, raw } = req.body;
-    console.log(inputVideo, font, color, xPosition, yPosition, raw);
+    const { inputVideo, font, color, xPosition, yPosition, srtUrl ,  Fontsize} = req.body;
+    console.log(inputVideo, font, color, xPosition, yPosition, srtUrl, Fontsize);
     const watermarkPath = path.join(__dirname, 'watermarks', 'watermark.svg');
 
 
-    if (!inputVideo || !font || !color || !xPosition || !yPosition || !raw) {
+    if (!inputVideo || !font || !color || !xPosition || !yPosition || !srtUrl || !Fontsize) {
       return res.status(400).json({ error: 'Missing required fields in the request body' });
     }
     const videoPath = path.join(__dirname, inputVideo);
-    const srtContent = generateSRT(raw);
-    // const hindi = await convertHindiToHinglish(srtContent, lang);
+  
+    const srtFilePath = path.join(__dirname, srtUrl);
 
-    const srtFilePath = path.join(__dirname, 'uploads', `temp.srt`);
-    fs.writeFileSync(srtFilePath, srtContent);
 
 
     const outputFilePath = videoPath.replace('.mp4', `l.mp4_output.mp4`);
     await new Promise((resolve, reject) => {
-      const ffmpegCommand = `ffmpeg -i ${videoPath} -i ${watermarkPath} -filter_complex "[1:v] scale=254:118.54 [watermark]; [0:v][watermark] overlay=135:426, subtitles=${srtFilePath}:force_style='Fontname=${font},PrimaryColour=&H${color.slice(1)}&,Alignment=2,MarginV=${yPosition},MarginL=${xPosition}'" -c:a copy ${outputFilePath}`;
+      const ffmpegCommand = `ffmpeg -i ${videoPath} -i ${watermarkPath} -filter_complex "[1:v] scale=203.2:94.832 [watermark]; [0:v][watermark] overlay=10:10, subtitles=${srtFilePath}:force_style='Fontname=${font},Fontsize=${Fontsize},PrimaryColour=&H${color.slice(5, 7)}${color.slice(3, 5)}${color.slice(1, 3)}&,Alignment=2,MarginV=${yPosition}'" -c:a copy ${outputFilePath}
+`;
       exec(ffmpegCommand, (error, stdout, stderr) => {
         if (error) {
           reject(error);
@@ -102,14 +106,12 @@ app.post('/api/change-style', upload.single('video'), async (req, res) => {
       });
     });
 
-    fs.unlinkSync(srtFilePath)
     res.json({ videoUrl: `http://localhost:3000/uploads/${path.basename(outputFilePath)}` });
   } catch (error) {
     console.error('Error changing style:', error);
     res.status(500).json({ error: error.message });
   }
 });
-
 
 function formatSubtitle(text) {
   const entries = text.trim().split('\n\n');
@@ -123,7 +125,9 @@ function formatSubtitle(text) {
 
     const idValue = parseInt(idLine);
     const [timeStart, timeEnd] = timeLine.match(/\d{2}:\d{2}:\d{2},\d{3}/g);
-    const words = valueLine.split(' ');
+
+    // Split words by considering non-ASCII characters and punctuation
+    const words = valueLine.match(/[\w'-]+|[^\w\s]/g);
 
     // Calculate the duration of the entire entry
     const totalDuration = parseTimecode(timeEnd) - parseTimecode(timeStart);
@@ -146,27 +150,22 @@ function formatSubtitle(text) {
   return result;
 }
 
+// Helper function to parse timecode to milliseconds
 function parseTimecode(timecode) {
-  const [hours, minutes, secondsAndMs] = timecode.split(':');
-  const [seconds, milliseconds] = secondsAndMs.split(',');
-
-  return (
-    parseInt(hours) * 3600 +
-    parseInt(minutes) * 60 +
-    parseInt(seconds) +
-    parseInt(milliseconds) / 1000
-  );
+  const [hours, minutes, seconds] = timecode.split(':');
+  const [secs, millis] = seconds.split(',');
+  return (parseInt(hours) * 3600 + parseInt(minutes) * 60 + parseInt(secs)) * 1000 + parseInt(millis);
 }
 
-function formatTimecode(seconds) {
-  const date = new Date(0);
-  date.setSeconds(seconds);
-  const hours = date.getUTCHours().toString().padStart(2, '0');
-  const minutes = date.getUTCMinutes().toString().padStart(2, '0');
-  const secondsPart = date.getUTCSeconds().toString().padStart(2, '0');
-  const milliseconds = (date.getUTCMilliseconds() / 1000).toFixed(3).slice(2, 5);
-  return `${hours}:${minutes}:${secondsPart},${milliseconds}`;
+// Helper function to format milliseconds to timecode
+function formatTimecode(milliseconds) {
+  const hours = Math.floor(milliseconds / 3600000).toString().padStart(2, '0');
+  const minutes = Math.floor((milliseconds % 3600000) / 60000).toString().padStart(2, '0');
+  const seconds = Math.floor((milliseconds % 60000) / 1000).toString().padStart(2, '0');
+  const millis = (milliseconds % 1000).toString().padStart(3, '0');
+  return `${hours}:${minutes}:${seconds},${millis}`;
 }
+
 
 async function transcribeVideo(videoPath) {
   try {
@@ -187,13 +186,14 @@ async function transcribeVideo(videoPath) {
 
 
 async function convertHindiToHinglish(changetext, language) {
+  console.log('trans');
   try {
     const completion = await openai.chat.completions.create({
       messages: [
         { role: "system", content: "You are a helpful assistant." },
-        { role: "user", content: `Convert the following Hindi text to Hinglish. Provide only the translation:\n\n${changetext}` }
+        { role: "user", content: `Convert the following Hindi text to Hinglish in SRT format. Provide only the translation in plain SRT format without any code block or additional formatting:\n\n${changetext}` }
       ],
-      model: "gpt-3.5-turbo-0125",
+      model: "gpt-4o-mini-2024-07-18",
     });
 
     const hinglishText = completion.choices[0].message.content;
