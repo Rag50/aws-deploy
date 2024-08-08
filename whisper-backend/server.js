@@ -19,6 +19,7 @@ const openai = new OpenAI({
     apiKey: "key",
 });
 
+// var serviceAccount = require("./caps-85254-firebase-adminsdk-31j3r-0edeb4bd98.json");
 
 const dotenv = require('dotenv');
 dotenv.config();
@@ -36,7 +37,6 @@ app.use(cors());
 app.use(express.json());
 
 
-// Configure AWS S3
 const s3 = new AWS.S3({
     accessKeyId: process.env.AWS_ACCESS_KEY_ID,
     secretAccessKey: process.env.AWS_SECRET_ACCESS_KEY,
@@ -97,7 +97,14 @@ async function deleteFileFromS3(bucketName, key) {
 
 app.post('/api/process-video', upload.single('video'), async (req, res) => {
     try {
+        console.log(req)
         const videoPath = req.file.path;
+        const language = req.body.SelectedLang;
+        const uid = req.body.uid;
+        const userdata = JSON.parse(req.body.userdata)
+        console.log(userdata.usertype, uid);
+        console.log(language, "from front");
+        let remaningmins = 0;
         const outputPath = `${videoPath}_output.mp4`;
         const watermarkPath = path.join(__dirname, 'watermarks', 'watermark.svg');
 
@@ -108,16 +115,31 @@ app.post('/api/process-video', upload.single('video'), async (req, res) => {
         console.log(srtContent)
         let outputSrt;
 
-        if (transcription.language === "english") {
+        if ((transcription.language == "english" && language == "English") || (transcription.language == "hindi" && language == "Hindi")) {
             outputSrt = srtContent;
         } else {
-            outputSrt = await convertHindiToHinglish(srtContent, transcription.language);
+            outputSrt = await convertHindiToHinglish(srtContent, language);
         }
 
 
 
         const srtFilePath = path.join(__dirname, 'uploads', `${req.file.filename.replace('.mp4', '')}.srt`);
         fs.writeFileSync(srtFilePath, outputSrt);
+
+        const videoDuration = await getVideoDuration(videoPath);
+        console.log(videoDuration);
+
+        if (userdata.usertype === 'free') {
+            if (videoDuration > 3) {
+                return res.status(400).json({ error: 'Video length exceeds 3 minutes limit for free users' });
+            }
+            else {
+                console.log(userdata.videomins, 'user mins');
+                console.log(videoDuration, 'dur');
+                remaningmins = userdata.videomins - videoDuration;
+                console.log(remaningmins);
+            }
+        }
 
 
 
@@ -126,6 +148,16 @@ app.post('/api/process-video', upload.single('video'), async (req, res) => {
         const videoUpload = await uploadToS3(videoPath, 'capsuservideos');
         const srtUpload = await uploadToS3(srtFilePath, 'capsuservideos');
         console.log(videoUpload, srtUpload)
+
+
+        const userRef = db.collection('users').doc(uid);
+
+        const exact = Math.round(remaningmins)
+        console.log(exact, "rounded")
+        await userRef.update({
+            videomins: exact,
+        });
+
         fs.unlinkSync(videoPath);
         fs.unlinkSync(srtFilePath);
 
@@ -158,16 +190,6 @@ app.post('/api/change-style', upload.single('video'), async (req, res) => {
         let remaningmins = 0;
 
         // Check video length and user type
-        const videoDuration = await getVideoDuration(videoPath);
-        if (userdata.usertype === 'free') {
-            if (videoDuration > 3) {
-                return res.status(400).json({ error: 'Video length exceeds 3 minutes limit for free users' });
-            }
-            else {
-                remaningmins = userdata.videomins - videoDuration;
-                console.log(remaningmins);
-            }
-        }
 
         const outputFilePath = videoPath.replace('.mp4', `_output.mp4`);
         await new Promise((resolve, reject) => {
@@ -204,22 +226,16 @@ app.post('/api/change-style', upload.single('video'), async (req, res) => {
             key: outputUpload.Key
         });
 
-        const userRef = db.collection('users').doc(uid);
-
-        const exact = Math.round(remaningmins)
-        console.log(exact, "rounded")
-        await userRef.update({
-            videomins: exact,
-        });
 
         fs.unlinkSync(srtFilePath)
 
-        res.json({ videoUrl: outputVideoUrl, rem: exact });
+        res.json({ videoUrl: outputVideoUrl });
     } catch (error) {
         console.error('Error changing style:', error);
         res.status(500).json({ error: error.message });
     }
 });
+
 
 function formatSubtitle(text) {
     const entries = text.trim().split('\n\n');
@@ -234,22 +250,19 @@ function formatSubtitle(text) {
         const idValue = parseInt(idLine);
         const [timeStart, timeEnd] = timeLine.match(/\d{2}:\d{2}:\d{2},\d{3}/g);
 
-        const words = valueLine.match(/[\w'-]+|[^\w\s]/g);
         const totalDuration = parseTimecode(timeEnd) - parseTimecode(timeStart);
-        const wordDuration = totalDuration / words.length;
 
-        words.forEach((word, index) => {
-            const wordTimeStart = parseTimecode(timeStart) + (index * wordDuration);
-            const wordTimeEnd = wordTimeStart + wordDuration;
+        // Treat the entire valueLine as a single unit
+        const wordTimeStart = parseTimecode(timeStart);
+        const wordTimeEnd = parseTimecode(timeEnd);
 
-            const formattedEntry = {
-                id: `${idValue}-${index + 1}`,
-                timeStart: formatTimecode(wordTimeStart),
-                timeEnd: formatTimecode(wordTimeEnd),
-                value: word,
-            };
-            result.push(formattedEntry);
-        });
+        const formattedEntry = {
+            id: `${idValue}-1`,
+            timeStart: formatTimecode(wordTimeStart),
+            timeEnd: formatTimecode(wordTimeEnd),
+            value: valueLine,
+        };
+        result.push(formattedEntry);
     });
 
     return result;
@@ -286,11 +299,20 @@ async function transcribeVideo(videoPath) {
 }
 
 async function convertHindiToHinglish(changetext, language) {
+    let prompt;
+    if (language == 'Hindi') {
+        prompt = `Convert the following text to hindi in pure devnagri alphabets  in SRT format.Provide only the translation in plain SRT format without any code block or additional formatting:\n\n${changetext}`
+    }
+    else if (language == 'English') {
+        prompt = `Convert the following text to english in SRT format.Provide only the translation in plain SRT format without any code block or additional formatting:\n\n${changetext}`
+    } else {
+        prompt = `Convert the following Hindi text to Hinglish in SRT format. Provide only the translation in plain SRT format without any code block or additional formatting:\n\n${changetext}`
+    }
     try {
         const completion = await openai.chat.completions.create({
             messages: [
                 { role: "system", content: "You are a helpful assistant." },
-                { role: "user", content: `Convert the following Hindi text to Hinglish in SRT format. Provide only the translation in plain SRT format without any code block or additional formatting:\n\n${changetext}` },
+                { role: "user", content: prompt },
             ],
             model: "gpt-4o-mini-2024-07-18",
         });
