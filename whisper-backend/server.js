@@ -15,14 +15,14 @@ const admin = require('firebase-admin');
 const AWS = require('aws-sdk');
 const temp = require('temp');
 const streamifier = require('streamifier');
+const dotenv = require('dotenv');
+dotenv.config();
 const openai = new OpenAI({
-    apiKey: "key",
+    apiKey: process.env.OPEN_AI,
 });
 
 // var serviceAccount = require("./caps-85254-firebase-adminsdk-31j3r-0edeb4bd98.json");
 
-const dotenv = require('dotenv');
-dotenv.config();
 
 admin.initializeApp({
     credential: admin.credential.cert(serviceAccount)
@@ -176,7 +176,8 @@ app.post('/api/process-video', upload.single('video'), async (req, res) => {
 
 app.post('/api/change-style', upload.single('video'), async (req, res) => {
     try {
-        const { inputVideo, font, color, xPosition, yPosition, srtUrl, Fontsize, userdata, uid } = req.body;
+        const { inputVideo, font, color, xPosition, yPosition, srtUrl, Fontsize, userdata, uid, save } = req.body;
+        console.log(save);
 
         if (!inputVideo || !font || !color || !xPosition || !yPosition || !srtUrl || !Fontsize || !userdata || !uid) {
             return res.status(400).json({ error: 'Missing required fields in the request body' });
@@ -203,28 +204,41 @@ app.post('/api/change-style', upload.single('video'), async (req, res) => {
             });
         });
 
-        // Upload output video to S3
-        const outputUpload = await uploadToS3(tempOutputPath, 'capsuservideos');
-        const outputVideoUrl = outputUpload.Location;
+        let outputUpload
+        let outputVideoUrl
 
-        // Schedule deletion based on user type
-        if (userdata.usertype === 'free') {
-            scheduleFileDeletion('capsuservideos', outputUpload.Key, 2); // 24 hours
+        if (save) {
+
+            // Upload output video to S3
+            outputUpload = await uploadToS3(tempOutputPath, 'capsuservideos');
+            outputVideoUrl = outputUpload.Location;
+
+            // Schedule deletion based on user type
+            if (userdata.usertype === 'free') {
+                scheduleFileDeletion('capsuservideos', outputUpload.Key, 3); // 24 hours
+            } else {
+                scheduleFileDeletion('capsuservideos', outputUpload.Key, 30 * 24 * 60 * 60 * 1000); // 1 month
+            }
+
+            // Delete the input video
+            await deleteFromS3(videoPath, 'capsuservideos');
+
+            const videos = userdata.videos || [];
+
+
+            await db.collection('users').doc(uid).collection('videos').add({
+                videoUrl: outputVideoUrl,
+                createdAt: admin.firestore.FieldValue.serverTimestamp(),
+                key: outputUpload.Key
+            });
         } else {
-            scheduleFileDeletion('capsuservideos', outputUpload.Key, 30 * 24 * 60 * 60 * 1000); // 1 month
+            outputUpload = await uploadToS3(tempOutputPath, 'capsuservideos');
+            outputVideoUrl = outputUpload.Location;
+
+            scheduleFileDeletion('capsuservideos', outputUpload.Key, 1)
+
+            await deleteFromS3(videoPath, 'capsuservideos');
         }
-
-        // Delete the input video
-        await deleteFromS3(videoPath, 'capsuservideos');
-
-        const videos = userdata.videos || [];
-
-
-        await db.collection('users').doc(uid).collection('videos').add({
-            videoUrl: outputVideoUrl,
-            createdAt: admin.firestore.FieldValue.serverTimestamp(),
-            key: outputUpload.Key
-        });
 
 
         fs.unlinkSync(srtFilePath)
