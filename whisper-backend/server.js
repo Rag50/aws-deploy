@@ -177,7 +177,7 @@ app.post('/api/process-video', upload.single('video'), async (req, res) => {
 app.post('/api/change-style', upload.single('video'), async (req, res) => {
     try {
         const { inputVideo, font, color, xPosition, yPosition, srtUrl, Fontsize, userdata, uid, save } = req.body;
-        console.log(save);
+        console.log(font);
 
         if (!inputVideo || !font || !color || !xPosition || !yPosition || !srtUrl || !Fontsize || !userdata || !uid) {
             return res.status(400).json({ error: 'Missing required fields in the request body' });
@@ -187,14 +187,20 @@ app.post('/api/change-style', upload.single('video'), async (req, res) => {
         const srtFilePath = path.join(__dirname, 'uploads', `${path.basename(srtUrl)}`);
         const srtResponse = await axios.get(srtUrl);
         fs.writeFileSync(srtFilePath, srtResponse.data);
+        const srtContent = fs.readFileSync(srtFilePath, 'utf-8');
+        const assContent = convertSrtToAssWordByWord(srtContent, font, color , yPosition);
+        const assFilePath = path.join(__dirname, 'uploads', 'subtitles.ass');
+        fs.writeFileSync(assFilePath, assContent);
         const tempOutputPath = temp.path({ suffix: '.mp4' });
+
         let remaningmins = 0;
 
         // Check video length and user type
 
         const outputFilePath = videoPath.replace('.mp4', `_output.mp4`);
         await new Promise((resolve, reject) => {
-            const ffmpegCommand = `ffmpeg -i ${videoPath} -i ${watermarkPath} -filter_complex "[1:v] scale=203.2:94.832 [watermark]; [0:v][watermark] overlay=10:10, subtitles=${srtFilePath}:force_style='Fontname=${font},Fontsize=${Fontsize},PrimaryColour=&H${color.slice(5, 7)}${color.slice(3, 5)}${color.slice(1, 3)}&,Alignment=2,MarginV=${yPosition}'" -c:a copy ${tempOutputPath}`;
+            const ffmpegCommand = `ffmpeg -i ${videoPath} -i ${watermarkPath} -filter_complex "[1:v] scale=203.2:94.832 [watermark]; [0:v][watermark] overlay=158:301, ass=${assFilePath}" -c:a copy ${tempOutputPath}`;
+
             exec(ffmpegCommand, (error, stdout, stderr) => {
                 if (error) {
                     reject(error);
@@ -242,6 +248,7 @@ app.post('/api/change-style', upload.single('video'), async (req, res) => {
 
 
         fs.unlinkSync(srtFilePath)
+        fs.unlinkSync(assFilePath)
 
         res.json({ videoUrl: outputVideoUrl });
     } catch (error) {
@@ -338,6 +345,156 @@ async function convertHindiToHinglish(changetext, language) {
     }
 }
 
+
+const convertColorToAss = (color) => {
+    if (!color) return '&H00FFFFFF'; // Default to white if color is undefined
+
+    if (typeof color === 'string') {
+        if (color.startsWith('#')) {
+            const rgb = color.replace('#', '').match(/.{2}/g);
+            if (rgb && rgb.length === 3) {
+                return `&H00${rgb[2]}${rgb[1]}${rgb[0]}`;
+            }
+        } else if (color.startsWith('rgba')) {
+            const matches = color.match(/\d+(\.\d+)?/g);
+            if (matches && matches.length === 4) {
+                const [r, g, b, a] = matches.map(Number);
+                const alpha = Math.round(a * 255);
+                return `&H${alpha.toString(16).padStart(2, '0')}${b.toString(16).padStart(2, '0')}${g.toString(16).padStart(2, '0')}${r.toString(16).padStart(2, '0')}`;
+            }
+        }
+    }
+
+    console.warn(`Invalid color format: ${color}. Defaulting to white.`);
+    return '&H00FFFFFF'; // Default to white if color format is not recognized
+};
+
+
+// Parse complex text shadow
+const parseTextShadow = (textShadow) => {
+    if (!textShadow) return { maxBlur: 0, maxOffset: 0, shadowColor: '' };
+
+    const shadows = textShadow.split(/,(?![^(]*\))/g).map(shadow => shadow.trim());
+    let maxBlur = 0;
+    let maxOffset = 0;
+    let shadowColor = '';
+
+    shadows.forEach(shadow => {
+        const rgbaMatch = shadow.match(/rgba?\([^)]+\)/);
+        let parts;
+        let color = '';
+
+        if (rgbaMatch) {
+            color = rgbaMatch[0];
+            parts = shadow.replace(color, '').trim().split(/\s+/);
+        } else {
+            parts = shadow.split(/\s+/);
+        }
+
+        if (parts.length >= 3) {
+            const [offsetX, offsetY, blur] = parts;
+            if (!color && parts.length > 3) {
+                color = parts.slice(3).join(' ');
+            }
+
+            console.log(color, "Shadow colour");
+            const blurValue = parseFloat(blur);
+            maxBlur = Math.max(maxBlur, isNaN(blurValue) ? 0 : blurValue);
+            maxOffset = Math.max(maxOffset, Math.abs(parseFloat(offsetX) || 0), Math.abs(parseFloat(offsetY) || 0));
+            if (!shadowColor && color) {
+                shadowColor = color;
+            }
+        }
+    });
+
+    return { maxBlur, maxOffset, shadowColor };
+};
+
+// Convert SRT to ASS with word-by-word display
+const convertSrtToAssWordByWord = (srtContent, font, color, yPosition) => {
+    const assColor = convertColorToAss(color);
+    const fontSize = parseInt(font.fontSize) || 24;
+    const fontWeight = (font.fontWeight === 'bold' || parseInt(font.fontWeight) >= 700) ? -1 : 0;
+    const fontItalic = font.fontStyle === 'italic' ? 1 : 0;
+
+    // Handle text shadow
+    const { maxBlur, maxOffset, shadowColor } = parseTextShadow(font.textShadow);
+    const outline = Math.ceil(maxBlur / 10);
+    const shadow = Math.ceil(maxOffset / 2);
+    const assShadowColor = convertColorToAss(shadowColor);
+
+    // Handle text stroke
+    const strokeWidth = parseInt(font.webkitTextStrokeWidth) || 0;
+    const strokeColor = convertColorToAss(font.webkitTextStrokeColor);
+
+    // Approximate padding as MarginV (vertical margin)
+    const padding = font.padding ? parseInt(font.padding.split(' ')[0]) : 0;
+    const marginV = yPosition || 10; // Default margin if no padding specified
+
+    const assHeader = `[Script Info]
+Title: Custom Subtitles
+ScriptType: v4.00+
+Collisions: Normal
+PlayDepth: 0
+Timer: 100.0000
+
+[V4+ Styles]
+Format: Name, Fontname, Fontsize, PrimaryColour, SecondaryColour, OutlineColour, BackColour, Bold, Italic, Underline, StrikeOut, ScaleX, ScaleY, Spacing, Angle, BorderStyle, Outline, Shadow, Alignment, MarginL, MarginR, MarginV, Encoding
+Style: Default,${font.fontFamily || 'Arial'},${fontSize},${assColor},&H00000000,&H00000000,${assShadowColor},${fontWeight},${fontItalic},0,0,100,100,${parseFloat(font.letterSpacing) || 0},0.00,1,${outline + strokeWidth},${shadow},2,10,10,${marginV},1
+
+[Events]
+Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
+`;
+
+    // ... (keep the existing srtToAssTime function) 
+
+    const srtToAssTime = (time) => {
+        return time.replace(",", ".");
+    };
+
+    // Parse SRT and create ASS dialogue lines, word by word
+    const assEvents = srtContent.split(/\n\n/).map((subtitle) => {
+        const lines = subtitle.split('\n');
+        if (lines.length < 3) return '';
+        const [index, time, ...textLines] = lines;
+        const [startTime, endTime] = time.split(' --> ').map(srtToAssTime);
+        const duration = timeToSeconds(endTime) - timeToSeconds(startTime);
+        const words = textLines.join(' ').split(' ');
+        const totalWords = words.length;
+
+        return words.map((word, i) => {
+            const [wordStartTime, wordEndTime] = adjustTime(startTime, duration, i, totalWords);
+            return `Dialogue: 0,${wordStartTime},${wordEndTime},Default,,0,0,0,,{\\blur${maxBlur / 2}}${word}`;
+        }).join('\n');
+    }).join('\n');
+
+    return assHeader + assEvents;
+};
+
+
+
+const adjustTime = (startTime, duration, index, totalWords) => {
+    const startTimeSeconds = timeToSeconds(startTime);
+    const wordDuration = duration / totalWords;
+    const newStartTime = startTimeSeconds + (wordDuration * index);
+    const newEndTime = newStartTime + wordDuration;
+    return [secondsToTime(newStartTime), secondsToTime(newEndTime)];
+};
+
+// Convert SRT time format to seconds
+const timeToSeconds = (time) => {
+    const [hours, minutes, seconds] = time.split(':').map(parseFloat);
+    return hours * 3600 + minutes * 60 + seconds;
+};
+
+// Convert seconds back to ASS time format
+const secondsToTime = (seconds) => {
+    const hours = Math.floor(seconds / 3600).toString().padStart(2, '0');
+    const minutes = Math.floor((seconds % 3600) / 60).toString().padStart(2, '0');
+    const secs = (seconds % 60).toFixed(2).padStart(5, '0');
+    return `${hours}:${minutes}:${secs}`;
+};
+
 function generateSRT(words) {
     let srt = '';
     words.forEach((el, index) => {
@@ -350,6 +507,8 @@ function generateSRT(words) {
     });
     return srt;
 }
+
+
 
 function timestampToSRTFormat(timestamp) {
     const date = new Date(timestamp * 1000);
