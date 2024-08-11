@@ -152,7 +152,7 @@ app.post('/api/process-video', upload.single('video'), async (req, res) => {
 
         const userRef = db.collection('users').doc(uid);
 
-        const exact = Math.round(remaningmins)
+        const exact = remaningmins.toFixed(1);
         console.log(exact, "rounded")
         await userRef.update({
             videomins: exact,
@@ -167,6 +167,7 @@ app.post('/api/process-video', upload.single('video'), async (req, res) => {
             rawData: transcription.words,
             inputFile: videoUpload.Location,
             lang: transcription.language,
+            key: videoUpload.Key,
             srt: srtUpload.Location,
         });
     } catch (error) {
@@ -176,7 +177,7 @@ app.post('/api/process-video', upload.single('video'), async (req, res) => {
 
 app.post('/api/change-style', upload.single('video'), async (req, res) => {
     try {
-        const { inputVideo, font, color, xPosition, yPosition, srtUrl, Fontsize, userdata, uid, save } = req.body;
+        const { inputVideo, font, color, xPosition, yPosition, srtUrl, Fontsize, userdata, uid, save , key} = req.body;
         console.log(font);
 
         if (!inputVideo || !font || !color || !xPosition || !yPosition || !srtUrl || !Fontsize || !userdata || !uid) {
@@ -218,24 +219,26 @@ app.post('/api/change-style', upload.single('video'), async (req, res) => {
             // Upload output video to S3
             outputUpload = await uploadToS3(tempOutputPath, 'capsuservideos');
             outputVideoUrl = outputUpload.Location;
-
             // Schedule deletion based on user type
             if (userdata.usertype === 'free') {
-                scheduleFileDeletion('capsuservideos', outputUpload.Key, 3); // 24 hours
+                scheduleFileDeletion('capsuservideos', key, 5)
+                scheduleFileDeletion('capsuservideos', outputUpload.Key, 2); // 24 hours
             } else {
-                scheduleFileDeletion('capsuservideos', outputUpload.Key, 30 * 24 * 60 * 60 * 1000); // 1 month
+                scheduleFileDeletion('capsuservideos', key, 30 * 24 * 60 * 60 * 1000); 
+                scheduleFileDeletion('capsuservideos', outputUpload.Key, 2); // 1 month
             }
 
             // Delete the input video
-            await deleteFromS3(videoPath, 'capsuservideos');
+            // await deleteFromS3(videoPath, 'capsuservideos');
 
             const videos = userdata.videos || [];
 
 
             await db.collection('users').doc(uid).collection('videos').add({
-                videoUrl: outputVideoUrl,
+                videoUrl: videoPath,
+                srt: srtUrl,
+                fontadded: font,
                 createdAt: admin.firestore.FieldValue.serverTimestamp(),
-                key: outputUpload.Key
             });
         } else {
             outputUpload = await uploadToS3(tempOutputPath, 'capsuservideos');
