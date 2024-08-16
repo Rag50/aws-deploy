@@ -21,7 +21,7 @@ const openai = new OpenAI({
     apiKey: process.env.OPEN_AI,
 });
 
-// var serviceAccount = require("./caps-85254-firebase-adminsdk-31j3r-0edeb4bd98.json");
+var serviceAccount = require("./caps-85254-firebase-adminsdk-31j3r-0edeb4bd98.json");
 
 
 admin.initializeApp({
@@ -151,8 +151,13 @@ app.post('/api/process-video', upload.single('video'), async (req, res) => {
 
 
         const userRef = db.collection('users').doc(uid);
+        let exact;
+        if (remaningmins <= 0) {
+            exact = 0;
+        } else {
+            exact = remaningmins.toFixed(1);
+        }
 
-        const exact = remaningmins.toFixed(1);
         console.log(exact, "rounded")
         await userRef.update({
             videomins: exact,
@@ -177,7 +182,7 @@ app.post('/api/process-video', upload.single('video'), async (req, res) => {
 
 app.post('/api/change-style', upload.single('video'), async (req, res) => {
     try {
-        const { inputVideo, font, color, xPosition, yPosition, srtUrl, Fontsize, userdata, uid, save , key} = req.body;
+        const { inputVideo, font, color, xPosition, yPosition, srtUrl, Fontsize, userdata, uid, save, key } = req.body;
         console.log(font);
 
         if (!inputVideo || !font || !color || !xPosition || !yPosition || !srtUrl || !Fontsize || !userdata || !uid) {
@@ -189,7 +194,7 @@ app.post('/api/change-style', upload.single('video'), async (req, res) => {
         const srtResponse = await axios.get(srtUrl);
         fs.writeFileSync(srtFilePath, srtResponse.data);
         const srtContent = fs.readFileSync(srtFilePath, 'utf-8');
-        const assContent = convertSrtToAssWordByWord(srtContent, font, color , yPosition);
+        const assContent = convertSrtToAssWordByWord(srtContent, font, color, yPosition);
         const assFilePath = path.join(__dirname, 'uploads', 'subtitles.ass');
         fs.writeFileSync(assFilePath, assContent);
         const tempOutputPath = temp.path({ suffix: '.mp4' });
@@ -224,7 +229,7 @@ app.post('/api/change-style', upload.single('video'), async (req, res) => {
                 scheduleFileDeletion('capsuservideos', key, 5)
                 scheduleFileDeletion('capsuservideos', outputUpload.Key, 2); // 24 hours
             } else {
-                scheduleFileDeletion('capsuservideos', key, 30 * 24 * 60 * 60 * 1000); 
+                scheduleFileDeletion('capsuservideos', key, 30 * 24 * 60 * 60 * 1000);
                 scheduleFileDeletion('capsuservideos', outputUpload.Key, 2); // 1 month
             }
 
