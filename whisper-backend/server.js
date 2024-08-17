@@ -184,7 +184,7 @@ app.post('/api/process-video', upload.single('video'), async (req, res) => {
 
 app.post('/api/change-style', upload.single('video'), async (req, res) => {
     try {
-        const { inputVideo, font, color, xPosition, yPosition, srtUrl, Fontsize, userdata, uid, save, key } = req.body;
+        const { inputVideo, font, color, xPosition, yPosition, srtUrl, Fontsize, userdata, uid, save, key , transcriptions } = req.body;
         console.log(font);
 
         if (!inputVideo || !font || !color || !xPosition || !yPosition || !srtUrl || !Fontsize || !userdata || !uid) {
@@ -250,6 +250,7 @@ app.post('/api/change-style', upload.single('video'), async (req, res) => {
                 srt: srtUrl,
                 fontadded: font,
                 createdAt: admin.firestore.FieldValue.serverTimestamp(),
+                transcriptions: transcriptions
             });
         } else {
             outputUpload = await uploadToS3(tempOutputPath, 'capsuservideos');
