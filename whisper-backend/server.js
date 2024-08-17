@@ -139,6 +139,8 @@ app.post('/api/process-video', upload.single('video'), async (req, res) => {
                 remaningmins = userdata.videomins - videoDuration;
                 console.log(remaningmins);
             }
+        } else {
+            remaningmins = userdata.videomins - videoDuration;
         }
 
 
@@ -202,11 +204,15 @@ app.post('/api/change-style', upload.single('video'), async (req, res) => {
         let remaningmins = 0;
 
         // Check video length and user type
+        let ffmpegCommand;
 
         const outputFilePath = videoPath.replace('.mp4', `_output.mp4`);
         await new Promise((resolve, reject) => {
-            const ffmpegCommand = `ffmpeg -i ${videoPath} -i ${watermarkPath} -filter_complex "[1:v] scale=203.2:94.832 [watermark]; [0:v][watermark] overlay=158:301, ass=${assFilePath}" -c:a copy ${tempOutputPath}`;
-
+            if (userdata.usertype === 'free') {
+                ffmpegCommand = `ffmpeg -i ${videoPath} -i ${watermarkPath} -filter_complex "[1:v] scale=203.2:94.832 [watermark]; [0:v][watermark] overlay=158:301, ass=${assFilePath}" -c:a copy ${tempOutputPath}`;
+            } else {
+                ffmpegCommand = `ffmpeg -i ${videoPath} -vf "ass=${assFilePath}" -c:a copy ${tempOutputPath}`
+            }
             exec(ffmpegCommand, (error, stdout, stderr) => {
                 if (error) {
                     reject(error);
@@ -229,7 +235,7 @@ app.post('/api/change-style', upload.single('video'), async (req, res) => {
                 scheduleFileDeletion('capsuservideos', key, 5)
                 scheduleFileDeletion('capsuservideos', outputUpload.Key, 2); // 24 hours
             } else {
-                scheduleFileDeletion('capsuservideos', key, 30 * 24 * 60 * 60 * 1000);
+                scheduleFileDeletion('capsuservideos', key, 8);
                 scheduleFileDeletion('capsuservideos', outputUpload.Key, 2); // 1 month
             }
 
