@@ -16,12 +16,14 @@ const AWS = require('aws-sdk');
 const temp = require('temp');
 const streamifier = require('streamifier');
 const dotenv = require('dotenv');
+const crypto = require("crypto");
+const { Cashfree } = require("cashfree-pg");
 dotenv.config();
 const openai = new OpenAI({
     apiKey: process.env.OPEN_AI,
 });
 
-var serviceAccount = require("./caps-85254-firebase-adminsdk-31j3r-0edeb4bd98.json");
+// var serviceAccount = require("./caps-85254-firebase-adminsdk-31j3r-0edeb4bd98.json");
 
 
 admin.initializeApp({
@@ -35,6 +37,12 @@ const db = getFirestore();
 const app = express();
 app.use(cors());
 app.use(express.json());
+
+
+
+Cashfree.XClientId = process.env.CASHFREE_APPID;
+Cashfree.XClientSecret = process.env.CASHFREE_SECRETKEY;
+Cashfree.XEnvironment = Cashfree.Environment.SANDBOX;
 
 
 const s3 = new AWS.S3({
@@ -184,7 +192,7 @@ app.post('/api/process-video', upload.single('video'), async (req, res) => {
 
 app.post('/api/change-style', upload.single('video'), async (req, res) => {
     try {
-        const { inputVideo, font, color, xPosition, yPosition, srtUrl, Fontsize, userdata, uid, save, key , transcriptions } = req.body;
+        const { inputVideo, font, color, xPosition, yPosition, srtUrl, Fontsize, userdata, uid, save, key, transcriptions } = req.body;
         console.log(font);
 
         if (!inputVideo || !font || !color || !xPosition || !yPosition || !srtUrl || !Fontsize || !userdata || !uid) {
@@ -269,6 +277,58 @@ app.post('/api/change-style', upload.single('video'), async (req, res) => {
     } catch (error) {
         console.error('Error changing style:', error);
         res.status(500).json({ error: error.message });
+    }
+});
+
+
+app.get("/api/payment", async (req, res) => {
+    console.log('its in payment')
+    try {
+        const orderAmount = req.query.order_amount || 0;
+        const customer_id = req.query.customer_id;
+        const customer_name = req.query.customer_name;
+        const customer_email = req.query.customer_email;
+        console.log(orderAmount, customer_id, customer_name, customer_email)
+        let request = {
+            order_amount: orderAmount,
+            order_currency: "INR",
+            order_id: generateOrderId(),
+            customer_details: {
+                customer_id: customer_id,
+                customer_name: customer_name,
+                customer_email: customer_email,
+                customer_phone: "9999999999"
+            },
+        };
+
+        Cashfree.PGCreateOrder("2023-08-01", request)
+            .then((response) => {
+                console.log(response.data);
+                res.json(response.data);
+            })
+            .catch((error) => {
+                console.error(error.response.data.message);
+            });
+    } catch (error) {
+        console.log(error);
+    }
+});
+
+app.post("/api/verify", async (req, res) => {
+    console.log(req.body);
+    try {
+        let { orderId } = req.body;
+        console.log(orderId, 'verify mei')
+
+        Cashfree.PGOrderFetchPayments("2023-08-01", orderId)
+            .then((response) => {
+                res.json(response.data);
+            })
+            .catch((error) => {
+                console.error(error.response.data.message);
+            });
+    } catch (error) {
+        console.log(error);
     }
 });
 
@@ -564,6 +624,18 @@ const scheduleFileDeletion = (bucketName, key, delayInMinutes) => {
     });
 };
 
+function generateOrderId() {
+    const uniqueId = crypto.randomBytes(16).toString("hex");
+
+    const hash = crypto.createHash("sha256");
+    hash.update(uniqueId);
+
+    const orderId = hash.digest("hex");
+    7;
+
+    return orderId.substr(0, 12);
+}
+
 app.listen(3000, () => console.log('Server running on port 3000'));
 
 
@@ -585,68 +657,7 @@ app.listen(3000, () => console.log('Server running on port 3000'));
 //   })
 // );
 
-// Cashfree.XClientId = process.env.CLIENT_ID;
-// Cashfree.XClientSecret = process.env.CLIENT_SECRET;
-// Cashfree.XEnvironment = Cashfree.Environment.SANDBOX;
 
-// function generateOrderId() {
-//   const uniqueId = crypto.randomBytes(16).toString("hex");
-
-//   const hash = crypto.createHash("sha256");
-//   hash.update(uniqueId);
-
-//   const orderId = hash.digest("hex");
-//   7;
-
-//   return orderId.substr(0, 12);
-// }
-
-// app.get("/", (req, res) => {
-//   res.send("Hello World!");
-// });
-// app.get("/payment", async (req, res) => {
-//   try {
-//     const orderAmount = req.query.order_amount || 0;
-//     let request = {
-//       order_amount: orderAmount,
-//       order_currency: "INR",
-//       order_id: await generateOrderId(),
-//       customer_details: {
-//         customer_id: "webcodder01",
-//         customer_phone: "9999999999",
-//         customer_name: "Web Codder",
-//         customer_email: "webcodder@example.com",
-//       },
-//     };
-
-//     Cashfree.PGCreateOrder("2023-08-01", request)
-//       .then((response) => {
-//         console.log(response.data);
-//         res.json(response.data);
-//       })
-//       .catch((error) => {
-//         console.error(error.response.data.message);
-//       });
-//   } catch (error) {
-//     console.log(error);
-//   }
-// });
-
-// app.post("/verify", async (req, res) => {
-//   try {
-//     let { orderId } = req.body;
-
-//     Cashfree.PGOrderFetchPayments("2023-08-01", orderId)
-//       .then((response) => {
-//         res.json(response.data);
-//       })
-//       .catch((error) => {
-//         console.error(error.response.data.message);
-//       });
-//   } catch (error) {
-//     console.log(error);
-//   }
-// });
 
 // app.listen(8000, () => {
 //   console.log("Server is running on port 8000");
