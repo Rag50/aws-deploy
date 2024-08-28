@@ -23,7 +23,7 @@ const openai = new OpenAI({
     apiKey: process.env.OPEN_AI,
 });
 
-// var serviceAccount = require("./caps-85254-firebase-adminsdk-31j3r-0edeb4bd98.json");
+var serviceAccount = require("./caps-85254-firebase-adminsdk-31j3r-0edeb4bd98.json");
 
 
 admin.initializeApp({
@@ -192,8 +192,8 @@ app.post('/api/process-video', upload.single('video'), async (req, res) => {
 
 app.post('/api/change-style', upload.single('video'), async (req, res) => {
     try {
-        const { inputVideo, font, color, xPosition, yPosition, srtUrl, Fontsize, userdata, uid, save, key, transcriptions } = req.body;
-        console.log(font);
+        const { inputVideo, font, color, xPosition, yPosition, srtUrl, Fontsize, userdata, uid, save, keyS3, transcriptions } = req.body;
+        console.log(keyS3 , "keyvalue");
 
         if (!inputVideo || !font || !color || !xPosition || !yPosition || !srtUrl || !Fontsize || !userdata || !uid) {
             return res.status(400).json({ error: 'Missing required fields in the request body' });
@@ -240,10 +240,10 @@ app.post('/api/change-style', upload.single('video'), async (req, res) => {
             outputVideoUrl = outputUpload.Location;
             // Schedule deletion based on user type
             if (userdata.usertype === 'free') {
-                scheduleFileDeletion('capsuservideos', key, 5)
+                scheduleFileDeletion('capsuservideos', keyS3, 5)
                 scheduleFileDeletion('capsuservideos', outputUpload.Key, 2); // 24 hours
             } else {
-                scheduleFileDeletion('capsuservideos', key, 8);
+                scheduleFileDeletion('capsuservideos', keyS3, 8);
                 scheduleFileDeletion('capsuservideos', outputUpload.Key, 2); // 1 month
             }
 
@@ -258,6 +258,7 @@ app.post('/api/change-style', upload.single('video'), async (req, res) => {
                 srt: srtUrl,
                 fontadded: font,
                 createdAt: admin.firestore.FieldValue.serverTimestamp(),
+                key: keyS3,
                 transcriptions: transcriptions
             });
         } else {
