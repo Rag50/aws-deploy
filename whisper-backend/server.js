@@ -15,6 +15,7 @@ const admin = require('firebase-admin');
 const AWS = require('aws-sdk');
 const temp = require('temp');
 const streamifier = require('streamifier');
+const nodemailer = require('nodemailer');
 const dotenv = require('dotenv');
 const crypto = require("crypto");
 const { Cashfree } = require("cashfree-pg");
@@ -75,6 +76,14 @@ async function uploadToS3(filePath, bucketName) {
 
     return s3.upload(params).promise();
 }
+
+const transporter = nodemailer.createTransport({
+    service: 'gmail',
+    auth: {
+        user: 'ai.editor@capsai.co',
+        pass: process.env.EMAIL_KEY
+    }
+});
 
 
 
@@ -331,6 +340,126 @@ app.post("/api/verify", async (req, res) => {
     } catch (error) {
         console.log(error);
     }
+});
+
+
+app.post("/api/send-welcome-email", (req, res) => {
+    const { email, userName } = req.body;
+
+    const mailOptions = {
+        from: '"Capsai" <ai.editor@capsai.co>',
+        to: email,
+        subject: 'Welcome to Our Service!',
+        html: `
+      <!DOCTYPE html>
+      <html lang="en">
+      <head>
+          <meta charset="UTF-8">
+          <meta name="viewport" content="width=device-width, initial-scale=1.0">
+          <title>Welcome to CapsAI</title>
+          <style>
+              body {
+                  font-family: Arial, sans-serif;
+                  background-color: #f4f4f4;
+                  margin: 0;
+                  padding: 0;
+              }
+              .email-container {
+                  max-width: 600px;
+                  margin: auto;
+                  background-color: #ffffff;
+                  padding: 0;
+                  border-radius: 10px;
+                  box-shadow: 0 0 10px rgba(0, 0, 0, 0.1);
+                  overflow: hidden;
+              }
+              .header {
+                  background-color: #0073e6;
+                  text-align: center;
+                  padding: 20px;
+              }
+              .header img {
+                  width: 150px;
+              }
+              .banner {
+                  width: 100%;
+                  height: auto;
+              }
+              .content {
+                  padding: 20px;
+                  text-align: left;
+                  line-height: 1.6;
+              }
+              .content h1 {
+                  color: #333333;
+              }
+              .content p {
+                  color: #666666;
+              }
+              .features {
+                  display: flex;
+                  justify-content: space-between;
+                  padding: 20px 0;
+              }
+              .feature {
+                  width: 30%;
+                  text-align: center;
+              }
+              .feature img {
+                  width: 100%;
+                  border-radius: 10px;
+              }
+              .footer {
+                  text-align: center;
+                  padding: 10px;
+                  font-size: 12px;
+                  color: #999999;
+              }
+              .footer a {
+                  color: #1e90ff;
+                  text-decoration: none;
+              }
+          </style>
+      </head>
+      <body>
+          <div class="email-container">
+             
+                   <img src="https://res.cloudinary.com/dczcbvfux/image/upload/v1722487967/Line_to2mo9.png" alt="Welcome Banner" class="banner">
+            
+            <div class="content">
+                
+                <p>Hi ${userName},</p>
+                <p>We’re thrilled to welcome you to the CapsAI community!</p>
+                <p>CapsAI is designed to make your life easier by automating the subtitle generation process and providing access to a wide range of premium fonts. Whether you're a seasoned creator or just starting out, CapsAI has the tools you need to elevate your content.</p>
+                <p>What You Can Do with CapsAI:</p>
+                <ul>
+                    <li>😊 <strong>Generate subtitles automatically:</strong> Streamline your workflow.</li>
+                    <li>🛠️ <strong>Customize with premium fonts:</strong> Make your videos stand out.</li>
+                    <li>✨ <strong>Access intuitive tools:</strong> Designed for creators of all levels.</li>
+                </ul>
+                <p>Ready to unlock all the features? Subscribe now and experience everything CapsAI has to offer.</p>
+                <p>If you ever have questions or need assistance, please don't hesitate to reach out. Enjoy your CapsAI experience!</p>
+                <p>Warm regards,<br>Team CapsAI</p>
+            </div>
+            <div class="footer">
+                <p>&copy; 2024 CapsAI. All rights reserved.</p>
+                <p><a href="https://capsai.co/">Unsubscribe</a></p>
+            </div>
+          </div>
+      </body>
+      </html>
+    `
+    };
+
+    transporter.sendMail(mailOptions, (error, info) => {
+        if (error) {
+            console.log(error);
+            res.status(500).send('Error sending email');
+        } else {
+            console.log('Email sent: ' + info.response);
+            res.status(200).send('Email sent successfully');
+        }
+    });
 });
 
 
