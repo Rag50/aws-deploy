@@ -117,18 +117,19 @@ app.post('/api/process-video', upload.single('video'), async (req, res) => {
         console.log(req)
         const videoPath = req.file.path;
         const language = req.body.SelectedLang;
-        const uid = req.body.uid;
-        const userdata = JSON.parse(req.body.userdata)
-        console.log(userdata.usertype, uid);
+        // const uid = req.body.uid;
+        // const userdata = JSON.parse(req.body.userdata)
+        // console.log(userdata.usertype, uid);
         console.log(language, "from front");
         let remaningmins = 0;
         const outputPath = `${videoPath}_output.mp4`;
         const watermarkPath = path.join(__dirname, 'watermarks', 'watermark.svg');
 
         const transcription = await transcribeVideo(videoPath);
+        console.log(transcription, "process wali")
 
 
-        const srtContent = generateSRT(transcription.words);
+        const srtContent = generateSRTSimple(transcription.words);
         console.log(srtContent)
         let outputSrt;
 
@@ -143,7 +144,7 @@ app.post('/api/process-video', upload.single('video'), async (req, res) => {
         const srtFilePath = path.join(__dirname, 'uploads', `${req.file.filename.replace('.mp4', '')}.srt`);
         fs.writeFileSync(srtFilePath, outputSrt);
 
-        const videoDuration = await getVideoDuration(videoPath);
+        /* const videoDuration = await getVideoDuration(videoPath);
         console.log(videoDuration);
 
         if (userdata.usertype === 'free') {
@@ -158,7 +159,7 @@ app.post('/api/process-video', upload.single('video'), async (req, res) => {
             }
         } else {
             remaningmins = userdata.videomins - videoDuration;
-        }
+        } */
 
 
 
@@ -169,18 +170,18 @@ app.post('/api/process-video', upload.single('video'), async (req, res) => {
         console.log(videoUpload, srtUpload)
 
 
-        const userRef = db.collection('users').doc(uid);
-        let exact;
-        if (remaningmins <= 0) {
-            exact = 0;
-        } else {
-            exact = remaningmins.toFixed(1);
-        }
+        // const userRef = db.collection('users').doc(uid);
+        // let exact;
+        // if (remaningmins <= 0) {
+        //     exact = 0;
+        // } else {
+        //     exact = remaningmins.toFixed(1);
+        // }
 
-        console.log(exact, "rounded")
-        await userRef.update({
-            videomins: exact,
-        });
+        // console.log(exact, "rounded")
+        // await userRef.update({
+        //     videomins: exact,
+        // });
 
         fs.unlinkSync(videoPath);
         fs.unlinkSync(srtFilePath);
@@ -202,7 +203,7 @@ app.post('/api/process-video', upload.single('video'), async (req, res) => {
 app.post('/api/change-style', upload.single('video'), async (req, res) => {
     try {
         const { inputVideo, font, color, xPosition, yPosition, srtUrl, Fontsize, userdata, uid, save, keyS3, transcriptions } = req.body;
-        console.log(keyS3 , "keyvalue");
+        console.log(keyS3, "keyvalue");
 
         if (!inputVideo || !font || !color || !xPosition || !yPosition || !srtUrl || !Fontsize || !userdata || !uid) {
             return res.status(400).json({ error: 'Missing required fields in the request body' });
@@ -212,23 +213,27 @@ app.post('/api/change-style', upload.single('video'), async (req, res) => {
         const srtFilePath = path.join(__dirname, 'uploads', `${path.basename(srtUrl)}`);
         const srtResponse = await axios.get(srtUrl);
         fs.writeFileSync(srtFilePath, srtResponse.data);
-        const srtContent = fs.readFileSync(srtFilePath, 'utf-8');
+        const srtContent = generateSRT(transcriptions);
+        console.log(transcriptions, "srt lund")
+        console.log(srtContent, "srt edit wali bkl")
         const assContent = convertSrtToAssWordByWord(srtContent, font, color, yPosition);
         const assFilePath = path.join(__dirname, 'uploads', 'subtitles.ass');
         fs.writeFileSync(assFilePath, assContent);
         const tempOutputPath = temp.path({ suffix: '.mp4' });
+
 
         let remaningmins = 0;
 
         // Check video length and user type
         let ffmpegCommand;
 
-        const outputFilePath = videoPath.replace('.mp4', `_output.mp4`);
+        // const outputFilePath = await downloadVideo(videoPath);
+        const outputFilePath = path.join(__dirname, 'uploads', path.basename(videoPath).replace('.mp4', '_output.mp4'));
         await new Promise((resolve, reject) => {
             if (userdata.usertype === 'free') {
-                ffmpegCommand = `ffmpeg -i ${videoPath} -i ${watermarkPath} -filter_complex "[1:v] scale=203.2:94.832 [watermark]; [0:v][watermark] overlay=158:301, ass=${assFilePath}" -c:a copy ${tempOutputPath}`;
+                ffmpegCommand = `ffmpeg -i ${videoPath} -i ${watermarkPath} -filter_complex "[1:v] scale=203.2:94.832 [watermark]; [0:v][watermark] overlay=158:301, ass=${assFilePath}" -c:a copy ${outputFilePath}`;
             } else {
-                ffmpegCommand = `ffmpeg -i ${videoPath} -vf "ass=${assFilePath}" -c:a copy ${tempOutputPath}`
+                ffmpegCommand = `ffmpeg -i ${videoPath} -vf "ass=${assFilePath}" -c:a copy ${outputFilePath}`
             }
             exec(ffmpegCommand, (error, stdout, stderr) => {
                 if (error) {
@@ -245,7 +250,7 @@ app.post('/api/change-style', upload.single('video'), async (req, res) => {
         if (save) {
 
             // Upload output video to S3
-            outputUpload = await uploadToS3(tempOutputPath, 'capsuservideos');
+            outputUpload = await uploadToS3(outputFilePath, 'capsuservideos');
             outputVideoUrl = outputUpload.Location;
             // Schedule deletion based on user type
             if (userdata.usertype === 'free') {
@@ -262,7 +267,7 @@ app.post('/api/change-style', upload.single('video'), async (req, res) => {
             const videos = userdata.videos || [];
 
 
-            await db.collection('users').doc(uid).collection('videos').add({
+            const newDocRef = await db.collection('users').doc(uid).collection('videos').add({
                 videoUrl: videoPath,
                 srt: srtUrl,
                 fontadded: font,
@@ -270,14 +275,55 @@ app.post('/api/change-style', upload.single('video'), async (req, res) => {
                 key: keyS3,
                 transcriptions: transcriptions
             });
+            const docId = newDocRef.id;
+            const docPath = `users/${uid}/videos`
+            if (userdata.usertype === 'free') {
+                scheduleDocumentDeletion(docPath, docId, 2)
+            } else {
+                scheduleDocumentDeletion(docPath, docId, 3)
+            }
+
         } else {
-            outputUpload = await uploadToS3(tempOutputPath, 'capsuservideos');
+            outputUpload = await uploadToS3(outputFilePath, 'capsuservideos');
             outputVideoUrl = outputUpload.Location;
 
             scheduleFileDeletion('capsuservideos', outputUpload.Key, 1)
 
-            await deleteFromS3(videoPath, 'capsuservideos');
+            scheduleFileDeletion('capsuservideos', keyS3, 6);
+
+            // await deleteFromS3(videoPath, 'capsuservideos');
         }
+
+
+        const videoDuration = await getVideoDuration(videoPath);
+
+
+        if (userdata.usertype === 'free') {
+            if (videoDuration > 3) {
+                return res.status(400).json({ error: 'Video length exceeds 3 minutes limit for free users' });
+            }
+            else {
+                console.log(userdata.videomins, 'user mins');
+                console.log(videoDuration, 'dur');
+                remaningmins = userdata.videomins - videoDuration;
+                console.log(remaningmins);
+            }
+        } else {
+            remaningmins = userdata.videomins - videoDuration;
+        }
+
+        const userRef = db.collection('users').doc(uid);
+        let exact;
+        if (remaningmins <= 0) {
+            exact = 0;
+        } else {
+            exact = remaningmins.toFixed(1);
+        }
+
+        console.log(exact, "rounded")
+        await userRef.update({
+            videomins: exact,
+        });
 
 
         fs.unlinkSync(srtFilePath)
@@ -289,6 +335,7 @@ app.post('/api/change-style', upload.single('video'), async (req, res) => {
         res.status(500).json({ error: error.message });
     }
 });
+
 
 
 app.get("/api/payment", async (req, res) => {
@@ -341,6 +388,7 @@ app.post("/api/verify", async (req, res) => {
         console.log(error);
     }
 });
+
 
 
 app.post("/api/send-welcome-email", (req, res) => {
@@ -437,7 +485,7 @@ app.post("/api/send-welcome-email", (req, res) => {
                     <li>🛠️ <strong>Customize with premium fonts:</strong> Make your videos stand out.</li>
                     <li>✨ <strong>Access intuitive tools:</strong> Designed for creators of all levels.</li>
                 </ul>
-                <p>Ready to unlock all the features? Subscribe now and experience everything CapsAI has to offer.</p>
+                <p>Ready to unlock all the features? <a href="https://capsai.co/pricing" target="_blank" style="color: #1e90ff; text-decoration: none;">Subscribe now</a> and experience everything CapsAI has to offer.</p>
                 <p>If you ever have questions or need assistance, please don't hesitate to reach out. Enjoy your CapsAI experience!</p>
                 <p>Warm regards,<br>Team CapsAI</p>
             </div>
@@ -461,6 +509,181 @@ app.post("/api/send-welcome-email", (req, res) => {
         }
     });
 });
+
+
+app.post("/api/creds-refuel", (req, res) => {
+    const { email, userName } = req.body;
+
+    const mailOptions = {
+        from: '"Capsai" <ai.editor@capsai.co>',
+        to: email,
+        subject: 'Refuel Your Minutes-Plans Starting at ₹29',
+        html: `
+    <!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>CapsAI Pricing Plans</title>
+<link rel="stylesheet" href="styles.css">
+<style>
+body, html {
+    margin: 0;
+    padding: 16;
+    font-family: Arial, sans-serif;
+    background: #ffffff;
+    color: #333;
+}
+
+.email-container {
+    width: 100%;
+    max-width: 600px;
+    margin: auto;
+    background: #ffffff;
+    border-radius: 8px;
+    overflow: hidden;
+    
+}
+header {
+    background-image: url('https://res.cloudinary.com/dykfhce2b/image/upload/v1726401709/Line_jplj8n.png');
+    padding: 40px;
+   
+    text-align: center;
+    color: black;
+}
+
+header h1 {
+    margin-inline:50px;
+}
+header p {
+ 
+  margin-block: 30px;
+}
+
+.social-preview img {
+    width: 100%;
+}
+
+.content {
+    padding: 20px;
+    line-height: 1.6;
+}
+
+.pricing ul, .details ul {
+    list-style: none;
+    padding: 0;
+}
+
+.pricing li, .details li {
+    background: #f4f4f9;
+    margin: 10px 0;
+    padding: 10px;
+    border-radius: 4px;
+}
+
+.btn-explore {
+    background: #007bff;
+    color: white;
+    border: none;
+    padding: 10px 20px;
+    
+    cursor: pointer;
+    border-radius: 5px;
+    text-decoration: none;
+}
+
+button:hover {
+    background: #0056b3;
+}
+
+footer {
+    padding: 20px;
+    text-align: left;
+    font-size: 0.85em;
+}
+
+.social-icons img {
+    width: 24px;
+    margin: 0 5px;
+}
+
+.footer-links a {
+    color: #007bff;
+    text-decoration: none;
+    margin-right: 10px;
+}
+
+ </style>
+</head>
+<body>
+<div class="email-container">
+    <a href="https://capsai.co/pricing" target="_blank"><img src="https://res.cloudinary.com/dykfhce2b/image/upload/v1727200114/Capsai_fycoiu.png" alt="Welcome Banner" class="banner"></a>
+    <section class="content">
+         <div class="email-content">
+            <p>Hi ${userName},</p>
+            <p>🎉 Tailored Pricing Plans Just for You! 🎉</p>
+            <p>Whether you're just starting out or you're a seasoned content creator, we have a plan that's perfect for you.</p>
+            <p>Here's what you can expect:</p>
+            <ul>
+                <li>Affordable Plans: Starting at just Rs 29</li>
+                <li>Flexible Validity: Subtitle your content at your own pace</li>
+                <li>Tailored Minutes: Plans that match your content needs</li>
+            </ul>
+            <p>Check out the details below and find the plan that’s right for you:</p>
+            <ul class="pricing-list">
+                <li>Rs 29 Plan: 20 minutes, 20 days validity</li>
+                <li>Rs 99 Plan: 70 minutes, 30 days validity</li>
+                <li>Rs 199 Plan: 150 minutes, 45 days validity</li>
+            </ul>
+            <p>✨ Don’t miss out on making your content shine with perfect subtitles! Start Subtitling Today!</p>
+            <a href="https://capsai.co/pricing" class="btn-explore">Explore now</a>
+        </div>
+    </section>
+    <footer>
+        <p>Cheers,</p>
+        <p>The Capsai Team</p>
+        <!--<div class="social-icons">-->
+        <!--    <img src="icon-x.png" alt="Social X">-->
+        <!--    <img src="icon-linkedin.png" alt="LinkedIn">-->
+        <!--    <img src="icon-instagram.png" alt="Instagram">-->
+        <!--</div>-->
+        <!--<div class="footer-links">-->
+        <!--    <a href="#">Unsubscribe</a>-->
+        <!--    <a href="#">Terms Privacy</a>-->
+        <!--    <a href="#">About us</a>-->
+        <!--</div>-->
+    </footer>
+</div>
+</body>
+</html>
+    `
+    };
+
+    transporter.sendMail(mailOptions, (error, info) => {
+        if (error) {
+            console.log(error);
+            res.status(500).send('Error sending email');
+        } else {
+            console.log('Email sent: ' + info.response);
+            res.status(200).send('Email sent successfully');
+        }
+    });
+});
+
+
+
+
+
+
+function generateSRT(words) {
+    let srt = '';
+    words.forEach((el, index) => {
+        srt += `${index + 1}\n`;
+        srt += `${el.timeStart} --> ${el.timeEnd}\n`;
+        srt += `${el.value}\n\n`;
+    });
+    return srt;
+}
 
 
 function formatSubtitle(text) {
@@ -615,6 +838,7 @@ const parseTextShadow = (textShadow) => {
     return { maxBlur, maxOffset, shadowColor };
 };
 
+
 // Convert SRT to ASS with word-by-word display
 const convertSrtToAssWordByWord = (srtContent, font, color, yPosition) => {
     const assColor = convertColorToAss(color);
@@ -700,7 +924,7 @@ const secondsToTime = (seconds) => {
     return `${hours}:${minutes}:${secs}`;
 };
 
-function generateSRT(words) {
+function generateSRTSimple(words) {
     let srt = '';
     words.forEach((el, index) => {
         const startTime = timestampToSRTFormat(el.start);
@@ -753,6 +977,30 @@ const scheduleFileDeletion = (bucketName, key, delayInMinutes) => {
         }
     });
 };
+
+const scheduleDocumentDeletion = (collectionPath, docId, delayInMinutes) => {
+    const date = new Date();
+    date.setMinutes(date.getMinutes() + delayInMinutes);
+
+    // Schedule cron job based on future date
+    const cronExpression = `${date.getMinutes()} ${date.getHours()} ${date.getDate()} ${date.getMonth() + 1} *`;
+
+    cron.schedule(cronExpression, async () => {
+        try {
+            // Reference to the specific document
+            const docRef = admin.firestore().doc(`${collectionPath}/${docId}`);
+
+            // Delete the document
+            await docRef.delete();
+            console.log(`Document with ID: ${docId} deleted from ${collectionPath}`);
+        } catch (error) {
+            console.error(`Error deleting document with ID: ${docId} from ${collectionPath}:`, error);
+        }
+    });
+
+    console.log(`Scheduled document deletion for ${docId} at ${date}`);
+};
+
 
 function generateOrderId() {
     const uniqueId = crypto.randomBytes(16).toString("hex");
