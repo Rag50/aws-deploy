@@ -14,6 +14,7 @@ const { getFirestore, doc, setDoc, getDoc, updateDoc } = require('firebase-admin
 const admin = require('firebase-admin');
 const AWS = require('aws-sdk');
 const temp = require('temp');
+const { BlobServiceClient } = require('@azure/storage-blob');
 const streamifier = require('streamifier');
 const nodemailer = require('nodemailer');
 const dotenv = require('dotenv');
@@ -46,11 +47,9 @@ Cashfree.XClientSecret = process.env.CASHFREE_SECRETKEY;
 Cashfree.XEnvironment = Cashfree.Environment.SANDBOX;
 
 
-const s3 = new AWS.S3({
-    accessKeyId: process.env.AWS_ACCESS_KEY_ID,
-    secretAccessKey: process.env.AWS_SECRET_ACCESS_KEY,
-    region: process.env.AWS_REGION,
-});
+
+const blobServiceClient = BlobServiceClient.fromConnectionString(process.env.AZURE_STORE);
+const containerClient = blobServiceClient.getContainerClient('capsuservideos');
 
 const storage = multer.diskStorage({
     destination: (req, file, cb) => {
@@ -65,16 +64,23 @@ const storage = multer.diskStorage({
 const upload = multer({ storage: storage });
 
 
-
-async function uploadToS3(filePath, bucketName) {
-    const fileContent = fs.readFileSync(filePath);
-    const params = {
-        Bucket: bucketName,
-        Key: path.basename(filePath),
-        Body: fileContent,
+async function uploadToAzure(filePath) {
+    const blobName = path.basename(filePath);
+    const blockBlobClient = containerClient.getBlockBlobClient(blobName);
+    const uploadBlobResponse = await blockBlobClient.uploadFile(filePath);
+    return {
+        url: blockBlobClient.url,
+        blobName,
     };
+}
 
-    return s3.upload(params).promise();
+// Helper function to delete file from Azure Blob Storage
+async function deleteFromAzure(containerName, blobName) {
+    const containerClient = blobServiceClient.getContainerClient(containerName);
+    const blockBlobClient = containerClient.getBlockBlobClient(blobName);
+
+    await blockBlobClient.delete();
+    console.log(`Blob ${blobName} successfully deleted from container ${containerName}`);
 }
 
 const transporter = nodemailer.createTransport({
@@ -85,31 +91,6 @@ const transporter = nodemailer.createTransport({
     }
 });
 
-
-
-async function deleteFromS3(filePath, bucketName) {
-    const params = {
-        Bucket: bucketName,
-        Key: path.basename(filePath),
-    };
-
-    return s3.deleteObject(params).promise();
-}
-
-async function deleteFileFromS3(bucketName, key) {
-    const params = {
-        Bucket: bucketName,
-        Key: key,
-    };
-
-    try {
-        await s3.deleteObject(params).promise();
-        console.log(`File ${key} deleted from bucket ${bucketName}`);
-    } catch (error) {
-        console.error(`Error deleting file ${key} from bucket ${bucketName}:`, error);
-        throw error; // Rethrow the error after logging it
-    }
-}
 
 
 app.post('/api/process-video', upload.single('video'), async (req, res) => {
@@ -163,12 +144,11 @@ app.post('/api/process-video', upload.single('video'), async (req, res) => {
 
 
 
-        // Upload video and SRT to S3
+        // Upload video and SRT to azure
 
-        const videoUpload = await uploadToS3(videoPath, 'capsuservideos');
-        const srtUpload = await uploadToS3(srtFilePath, 'capsuservideos');
+        const videoUpload = await uploadToAzure(videoPath);
+        const srtUpload = await uploadToAzure(srtFilePath);
         console.log(videoUpload, srtUpload)
-
 
         // const userRef = db.collection('users').doc(uid);
         // let exact;
@@ -190,10 +170,10 @@ app.post('/api/process-video', upload.single('video'), async (req, res) => {
         res.json({
             transcription: formatSubtitle(outputSrt),
             rawData: transcription.words,
-            inputFile: videoUpload.Location,
+            inputFile: videoUpload.url,
             lang: transcription.language,
-            key: videoUpload.Key,
-            srt: srtUpload.Location,
+            key: videoUpload.blobName,
+            srt: srtUpload.url,
         });
     } catch (error) {
         res.status(500).json({ error: error.message });
@@ -203,7 +183,7 @@ app.post('/api/process-video', upload.single('video'), async (req, res) => {
 app.post('/api/change-style', upload.single('video'), async (req, res) => {
     try {
         const { inputVideo, font, color, xPosition, yPosition, srtUrl, Fontsize, userdata, uid, save, keyS3, transcriptions } = req.body;
-        console.log(keyS3, "keyvalue");
+        console.log(keyS3, save , "keyvalue");
 
         if (!inputVideo || !font || !color || !xPosition || !yPosition || !srtUrl || !Fontsize || !userdata || !uid) {
             return res.status(400).json({ error: 'Missing required fields in the request body' });
@@ -214,8 +194,6 @@ app.post('/api/change-style', upload.single('video'), async (req, res) => {
         const srtResponse = await axios.get(srtUrl);
         fs.writeFileSync(srtFilePath, srtResponse.data);
         const srtContent = generateSRT(transcriptions);
-        console.log(transcriptions, "srt lund")
-        console.log(srtContent, "srt edit wali bkl")
         const assContent = convertSrtToAssWordByWord(srtContent, font, color, yPosition);
         const assFilePath = path.join(__dirname, 'uploads', 'subtitles.ass');
         fs.writeFileSync(assFilePath, assContent);
@@ -247,18 +225,22 @@ app.post('/api/change-style', upload.single('video'), async (req, res) => {
         let outputUpload
         let outputVideoUrl
 
+       
+
         if (save) {
 
             // Upload output video to S3
-            outputUpload = await uploadToS3(outputFilePath, 'capsuservideos');
-            outputVideoUrl = outputUpload.Location;
+            // outputUpload = await uploadToS3(outputFilePath, 'capsuservideos');
+            // outputVideoUrl = outputUpload.Location;
+            outputUpload = await uploadToAzure(outputFilePath);
+            outputVideoUrl = outputUpload.url;
             // Schedule deletion based on user type
             if (userdata.usertype === 'free') {
                 scheduleFileDeletion('capsuservideos', keyS3, 5)
-                scheduleFileDeletion('capsuservideos', outputUpload.Key, 2); // 24 hours
+                scheduleFileDeletion('capsuservideos', outputUpload.blobName, 2);
             } else {
-                scheduleFileDeletion('capsuservideos', keyS3, 8);
-                scheduleFileDeletion('capsuservideos', outputUpload.Key, 2); // 1 month
+                scheduleFileDeletion('capsuservideos', keyS3, 2)
+                scheduleFileDeletion('capsuservideos', outputUpload.blobName, 2);
             }
 
             // Delete the input video
@@ -284,12 +266,14 @@ app.post('/api/change-style', upload.single('video'), async (req, res) => {
             }
 
         } else {
-            outputUpload = await uploadToS3(outputFilePath, 'capsuservideos');
-            outputVideoUrl = outputUpload.Location;
+           
+            outputUpload = await uploadToAzure(outputFilePath);
+            outputVideoUrl = outputUpload.url;
 
-            scheduleFileDeletion('capsuservideos', outputUpload.Key, 1)
+            scheduleFileDeletion('capsuservideos', outputUpload.blobName, 1);
 
-            scheduleFileDeletion('capsuservideos', keyS3, 6);
+            scheduleFileDeletion('capsuservideos', keyS3, 6)
+
 
             // await deleteFromS3(videoPath, 'capsuservideos');
         }
@@ -328,6 +312,7 @@ app.post('/api/change-style', upload.single('video'), async (req, res) => {
 
         fs.unlinkSync(srtFilePath)
         fs.unlinkSync(assFilePath)
+        fs.unlinkSync(outputFilePath)
 
         res.json({ videoUrl: outputVideoUrl });
     } catch (error) {
@@ -962,7 +947,7 @@ async function getVideoDuration(filePath) {
 }
 
 
-const scheduleFileDeletion = (bucketName, key, delayInMinutes) => {
+const scheduleFileDeletion = (containerName, blobName, delayInMinutes) => {
     const date = new Date();
     date.setMinutes(date.getMinutes() + delayInMinutes);
 
@@ -970,10 +955,10 @@ const scheduleFileDeletion = (bucketName, key, delayInMinutes) => {
 
     cron.schedule(cronExpression, async () => {
         try {
-            await deleteFileFromS3(bucketName, key);
-            console.log(`File ${key} deleted from ${bucketName}`);
+            await deleteFromAzure(containerName, blobName);
+            console.log(`File ${blobName} deleted from container ${containerName}`);
         } catch (error) {
-            console.error(`Error deleting file ${key} from ${bucketName}:`, error);
+            console.error(`Error deleting file ${blobName} from container ${containerName}:`, error);
         }
     });
 };
