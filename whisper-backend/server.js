@@ -114,7 +114,14 @@ app.post('/api/process-video', upload.single('video'), async (req, res) => {
         console.log(srtContent)
         let outputSrt;
 
-        if ((transcription.language == "english" && language == "English") || (transcription.language == "hindi" && language == "Hindi")) {
+
+        const directLanguages = ["English", "Hindi"];
+        const supportedLanguages = ["Bengali", "Telugu", "Marathi", "Tamil", "Urdu", "Gujarati", "Kannada", "Punjabi"];
+
+
+        if (directLanguages.includes(language) && transcription.language.toLowerCase() === language.toLowerCase()) {
+            outputSrt = srtContent;
+        } else if (supportedLanguages.includes(language)) {
             outputSrt = srtContent;
         } else {
             outputSrt = await convertHindiToHinglish(srtContent, language);
@@ -225,7 +232,7 @@ app.post('/api/change-style', upload.single('video'), async (req, res) => {
         let outputUpload
         let outputVideoUrl
 
-       
+
 
         if (save) {
 
@@ -266,7 +273,7 @@ app.post('/api/change-style', upload.single('video'), async (req, res) => {
             }
 
         } else {
-           
+
             outputUpload = await uploadToAzure(outputFilePath);
             outputVideoUrl = outputUpload.url;
 
