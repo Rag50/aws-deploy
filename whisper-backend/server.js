@@ -98,19 +98,27 @@ app.post('/api/process-video', upload.single('video'), async (req, res) => {
         console.log(req)
         const videoPath = req.file.path;
         const language = req.body.SelectedLang;
+        const isoneWord = req.body.WordLimit === 'true';
         // const uid = req.body.uid;
         // const userdata = JSON.parse(req.body.userdata)
         // console.log(userdata.usertype, uid);
-        console.log(language, "from front");
+        console.log(isoneWord, "from front");
         let remaningmins = 0;
         const outputPath = `${videoPath}_output.mp4`;
         const watermarkPath = path.join(__dirname, 'watermarks', 'watermark.svg');
 
-        const transcription = await transcribeVideo(videoPath);
+        const transcription = await transcribeVideo(videoPath, isoneWord);
         console.log(transcription, "process wali")
 
+        let srtContent
 
-        const srtContent = generateSRTSimple(transcription.words);
+        if (isoneWord) {
+            srtContent = generateSRTSimple(transcription.words)
+        } else {
+            console.log("Ran");
+            srtContent = processTranscriptionToSRT(transcription.segments, 3);
+        }
+
         console.log(srtContent)
         let outputSrt;
 
@@ -189,8 +197,8 @@ app.post('/api/process-video', upload.single('video'), async (req, res) => {
 
 app.post('/api/change-style', upload.single('video'), async (req, res) => {
     try {
-        const { inputVideo, font, color, xPosition, yPosition, srtUrl, Fontsize, userdata, uid, save, keyS3, transcriptions } = req.body;
-        console.log(keyS3, save , "keyvalue");
+        const { inputVideo, font, color, xPosition, yPosition, srtUrl, Fontsize, userdata, uid, save, keyS3, transcriptions, isOneword } = req.body;
+        console.log(keyS3, save, "keyvalue");
 
         if (!inputVideo || !font || !color || !xPosition || !yPosition || !srtUrl || !Fontsize || !userdata || !uid) {
             return res.status(400).json({ error: 'Missing required fields in the request body' });
@@ -201,7 +209,7 @@ app.post('/api/change-style', upload.single('video'), async (req, res) => {
         const srtResponse = await axios.get(srtUrl);
         fs.writeFileSync(srtFilePath, srtResponse.data);
         const srtContent = generateSRT(transcriptions);
-        const assContent = convertSrtToAssWordByWord(srtContent, font, color, yPosition);
+        let assContent = isOneword ? convertSrtToAssWordByWord(srtContent, font, color, yPosition) : convertSrtToAssWordByWord(srtContent, font, color, yPosition, 3);
         const assFilePath = path.join(__dirname, 'uploads', 'subtitles.ass');
         fs.writeFileSync(assFilePath, assContent);
         const tempOutputPath = temp.path({ suffix: '.mp4' });
@@ -723,15 +731,20 @@ function formatTimecode(milliseconds) {
     return `${hours}:${minutes}:${seconds},${millis}`;
 }
 
-async function transcribeVideo(videoPath) {
+async function transcribeVideo(videoPath, isoneWord) {
     try {
-        const transcription = await openai.audio.transcriptions.create({
+        const transcriptionRequest = {
             file: fs.createReadStream(videoPath),
             model: "whisper-1",
             response_format: "verbose_json",
-            timestamp_granularities: ["word"]
-        });
-        // const words = transcription;
+        };
+
+        // Conditionally add the timestamp_granularities field
+        if (isoneWord) {
+            transcriptionRequest.timestamp_granularities = ["word"];
+        }
+
+        const transcription = await openai.audio.transcriptions.create(transcriptionRequest);
         return transcription;
     } catch (error) {
         console.error('Error transcribing video:', error);
@@ -830,9 +843,7 @@ const parseTextShadow = (textShadow) => {
     return { maxBlur, maxOffset, shadowColor };
 };
 
-
-// Convert SRT to ASS with word-by-word display
-const convertSrtToAssWordByWord = (srtContent, font, color, yPosition) => {
+const convertSrtToAssWordByWord = (srtContent, font, color, yPosition, wordLimit = 1) => {
     const assColor = convertColorToAss(color);
     const fontSize = parseInt(font.fontSize) || 24;
     const fontWeight = (font.fontWeight === 'bold' || parseInt(font.fontWeight) >= 700) ? -1 : 0;
@@ -867,13 +878,35 @@ Style: Default,${font.fontFamily || 'Arial'},${fontSize},${assColor},&H00000000,
 Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
 `;
 
-    // ... (keep the existing srtToAssTime function) 
-
     const srtToAssTime = (time) => {
         return time.replace(",", ".");
     };
 
-    // Parse SRT and create ASS dialogue lines, word by word
+    const timeToSeconds = (time) => {
+        const [hours, minutes, seconds] = time.split(':');
+        const [secs, millis] = seconds.split('.');
+        return parseFloat(hours) * 3600 + parseFloat(minutes) * 60 + parseFloat(secs) + parseFloat(millis) / 1000;
+    };
+
+    const adjustTime = (startTime, duration, index, totalChunks) => {
+        const startSeconds = timeToSeconds(startTime);
+        const chunkDuration = duration / totalChunks;
+        const wordStartTime = startSeconds + (index * chunkDuration);
+        const wordEndTime = wordStartTime + chunkDuration;
+        return [
+            timestampToAssFormat(wordStartTime),
+            timestampToAssFormat(wordEndTime)
+        ];
+    };
+
+    const timestampToAssFormat = (seconds) => {
+        const hours = Math.floor(seconds / 3600).toString().padStart(2, '0');
+        const minutes = Math.floor((seconds % 3600) / 60).toString().padStart(2, '0');
+        const secs = (seconds % 60).toFixed(2).padStart(5, '0');
+        return `${hours}:${minutes}:${secs}`;
+    };
+
+    // Parse SRT and create ASS dialogue lines
     const assEvents = srtContent.split(/\n\n/).map((subtitle) => {
         const lines = subtitle.split('\n');
         if (lines.length < 3) return '';
@@ -883,15 +916,59 @@ Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
         const words = textLines.join(' ').split(' ');
         const totalWords = words.length;
 
-        return words.map((word, i) => {
-            const [wordStartTime, wordEndTime] = adjustTime(startTime, duration, i, totalWords);
-            return `Dialogue: 0,${wordStartTime},${wordEndTime},Default,,0,0,0,,{\\blur${maxBlur / 2}}${word}`;
-        }).join('\n');
+        // Handle both cases (word limit or single word)
+        const groupedEvents = [];
+        if (wordLimit > 1) {
+            // Group words into chunks
+            for (let i = 0; i < totalWords; i += wordLimit) {
+                const chunk = words.slice(i, i + wordLimit).join(' ');
+                const [chunkStartTime, chunkEndTime] = adjustTime(startTime, duration, i / wordLimit, Math.ceil(totalWords / wordLimit));
+                groupedEvents.push(`Dialogue: 0,${chunkStartTime},${chunkEndTime},Default,,0,0,0,,{\\blur${maxBlur / 2}}${chunk}`);
+            }
+        } else {
+            // Handle word by word (single word per event)
+            words.forEach((word, i) => {
+                const [wordStartTime, wordEndTime] = adjustTime(startTime, duration, i, totalWords);
+                groupedEvents.push(`Dialogue: 0,${wordStartTime},${wordEndTime},Default,,0,0,0,,{\\blur${maxBlur / 2}}${word}`);
+            });
+        }
+
+        return groupedEvents.join('\n');
     }).join('\n');
 
     return assHeader + assEvents;
 };
 
+
+
+function processTranscriptionToSRT(segments, wordLimit) {
+    let srt = '';
+    let index = 1;
+
+    segments.forEach((segment) => {
+        const words = segment.text.split(' ');
+
+        for (let i = 0; i < words.length; i += wordLimit) {
+            const chunk = words.slice(i, i + wordLimit).join(' ');
+
+            // Create SRT timestamp entry
+            const startTime = secondsToSRTTime(segment.start + (i / words.length) * (segment.end - segment.start));
+            const endTime = secondsToSRTTime(segment.start + ((i + wordLimit) / words.length) * (segment.end - segment.start));
+
+            srt += `${index}\n${startTime} --> ${endTime}\n${chunk}\n\n`;
+            index++;
+        }
+    });
+
+    return srt;
+}
+
+function secondsToSRTTime(seconds) {
+    const date = new Date(0);
+    date.setSeconds(seconds);
+    const time = date.toISOString().substr(11, 12); // Get "HH:MM:SS.mmm"
+    return time.replace('.', ','); // Replace dot with comma for SRT format
+}
 
 
 const adjustTime = (startTime, duration, index, totalWords) => {
