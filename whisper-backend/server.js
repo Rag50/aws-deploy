@@ -116,7 +116,7 @@ app.post('/api/process-video', upload.single('video'), async (req, res) => {
             srtContent = generateSRTSimple(transcription.words)
         } else {
             console.log("Ran");
-            srtContent = processTranscriptionToSRT(transcription.segments, 3);
+            srtContent = processTranscriptionToSRT(transcription.segments, 4);
         }
 
         console.log(srtContent)
@@ -209,7 +209,7 @@ app.post('/api/change-style', upload.single('video'), async (req, res) => {
         const srtResponse = await axios.get(srtUrl);
         fs.writeFileSync(srtFilePath, srtResponse.data);
         const srtContent = generateSRT(transcriptions);
-        let assContent = isOneword ? convertSrtToAssWordByWord(srtContent, font, color, yPosition) : convertSrtToAssWordByWord(srtContent, font, color, yPosition, 3);
+        let assContent = isOneword ? convertSrtToAssWordByWord(srtContent, font, color, yPosition) : convertSrtToAssWordByWord(srtContent, font, color, yPosition, 4);
         const assFilePath = path.join(__dirname, 'uploads', 'subtitles.ass');
         fs.writeFileSync(assFilePath, assContent);
         const tempOutputPath = temp.path({ suffix: '.mp4' });
@@ -397,7 +397,7 @@ app.post("/api/send-welcome-email", (req, res) => {
     const mailOptions = {
         from: '"Capsai" <ai.editor@capsai.co>',
         to: email,
-        subject: 'Welcome to Our Service!',
+        subject: 'Welcome to Capsai',
         html: `
       <!DOCTYPE html>
       <html lang="en">
@@ -472,7 +472,7 @@ app.post("/api/send-welcome-email", (req, res) => {
       <body>
           <div class="email-container">
              
-                   <img src="https://res.cloudinary.com/dczcbvfux/image/upload/v1722487967/Line_to2mo9.png" alt="Welcome Banner" class="banner">
+                   <img src="https://capsaistore.blob.core.windows.net/capsaiassets/Welcome_banner.png" alt="Welcome Banner" class="banner">
             
             <div class="content">
                 
@@ -617,7 +617,7 @@ footer {
 </head>
 <body>
 <div class="email-container">
-    <a href="https://capsai.co/pricing" target="_blank"><img src="https://res.cloudinary.com/dykfhce2b/image/upload/v1727200114/Capsai_fycoiu.png" alt="Welcome Banner" class="banner"></a>
+    <a href="https://capsai.co/pricing" target="_blank"><img src="https://capsaistore.blob.core.windows.net/capsaiassets/refuel.png" alt="Welcome Banner" class="banner"></a>
     <section class="content">
          <div class="email-content">
             <p>Hi ${userName},</p>
@@ -888,11 +888,13 @@ Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
         return parseFloat(hours) * 3600 + parseFloat(minutes) * 60 + parseFloat(secs) + parseFloat(millis) / 1000;
     };
 
-    const adjustTime = (startTime, duration, index, totalChunks) => {
+    const adjustTime = (startTime, endTime, index, totalChunks) => {
         const startSeconds = timeToSeconds(startTime);
+        const endSeconds = timeToSeconds(endTime);
+        const duration = endSeconds - startSeconds;
         const chunkDuration = duration / totalChunks;
         const wordStartTime = startSeconds + (index * chunkDuration);
-        const wordEndTime = wordStartTime + chunkDuration;
+        const wordEndTime = Math.min(wordStartTime + chunkDuration, endSeconds);
         return [
             timestampToAssFormat(wordStartTime),
             timestampToAssFormat(wordEndTime)
@@ -906,29 +908,30 @@ Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
         return `${hours}:${minutes}:${secs}`;
     };
 
-    // Parse SRT and create ASS dialogue lines
+
     const assEvents = srtContent.split(/\n\n/).map((subtitle) => {
         const lines = subtitle.split('\n');
         if (lines.length < 3) return '';
         const [index, time, ...textLines] = lines;
         const [startTime, endTime] = time.split(' --> ').map(srtToAssTime);
-        const duration = timeToSeconds(endTime) - timeToSeconds(startTime);
-        const words = textLines.join(' ').split(' ');
+        const words = textLines.join(' ').split(/\s+/);
         const totalWords = words.length;
 
-        // Handle both cases (word limit or single word)
+
         const groupedEvents = [];
         if (wordLimit > 1) {
-            // Group words into chunks
+
             for (let i = 0; i < totalWords; i += wordLimit) {
-                const chunk = words.slice(i, i + wordLimit).join(' ');
-                const [chunkStartTime, chunkEndTime] = adjustTime(startTime, duration, i / wordLimit, Math.ceil(totalWords / wordLimit));
+                const chunk = words.slice(i, Math.min(i + wordLimit, totalWords)).join(' ');
+                const chunkIndex = Math.floor(i / wordLimit);
+                const totalChunks = Math.ceil(totalWords / wordLimit);
+                const [chunkStartTime, chunkEndTime] = adjustTime(startTime, endTime, chunkIndex, totalChunks);
                 groupedEvents.push(`Dialogue: 0,${chunkStartTime},${chunkEndTime},Default,,0,0,0,,{\\blur${maxBlur / 2}}${chunk}`);
             }
         } else {
-            // Handle word by word (single word per event)
+
             words.forEach((word, i) => {
-                const [wordStartTime, wordEndTime] = adjustTime(startTime, duration, i, totalWords);
+                const [wordStartTime, wordEndTime] = adjustTime(startTime, endTime, i, totalWords);
                 groupedEvents.push(`Dialogue: 0,${wordStartTime},${wordEndTime},Default,,0,0,0,,{\\blur${maxBlur / 2}}${word}`);
             });
         }
@@ -947,13 +950,20 @@ function processTranscriptionToSRT(segments, wordLimit) {
 
     segments.forEach((segment) => {
         const words = segment.text.split(' ');
+        const totalWords = words.length;
+        const segmentDuration = segment.end - segment.start;
 
-        for (let i = 0; i < words.length; i += wordLimit) {
+        for (let i = 0; i < totalWords; i += wordLimit) {
             const chunk = words.slice(i, i + wordLimit).join(' ');
 
-            // Create SRT timestamp entry
-            const startTime = secondsToSRTTime(segment.start + (i / words.length) * (segment.end - segment.start));
-            const endTime = secondsToSRTTime(segment.start + ((i + wordLimit) / words.length) * (segment.end - segment.start));
+
+            const wordStartTime = segment.start + (i / totalWords) * segmentDuration;
+            const wordEndTime = segment.start + ((i + wordLimit) / totalWords) * segmentDuration;
+
+
+            const startTime = secondsToSRTTime(wordStartTime);
+            const endTime = secondsToSRTTime(Math.min(wordEndTime, segment.end));
+
 
             srt += `${index}\n${startTime} --> ${endTime}\n${chunk}\n\n`;
             index++;
