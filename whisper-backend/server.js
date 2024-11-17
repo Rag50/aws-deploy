@@ -197,8 +197,7 @@ app.post('/api/process-video', upload.single('video'), async (req, res) => {
 
 app.post('/api/change-style', upload.single('video'), async (req, res) => {
     try {
-        const { inputVideo, font, color, xPosition, yPosition, srtUrl, Fontsize, userdata, uid, save, keyS3, transcriptions, isOneword } = req.body;
-        console.log(keyS3, save, "keyvalue");
+        const { inputVideo, font, color, xPosition, yPosition, srtUrl, Fontsize, userdata, uid, save, keyS3, transcriptions, isOneword, videoResolution } = req.body;
 
         if (!inputVideo || !font || !color || !xPosition || !yPosition || !srtUrl || !Fontsize || !userdata || !uid) {
             return res.status(400).json({ error: 'Missing required fields in the request body' });
@@ -224,9 +223,18 @@ app.post('/api/change-style', upload.single('video'), async (req, res) => {
         const outputFilePath = path.join(__dirname, 'uploads', path.basename(videoPath).replace('.mp4', '_output.mp4'));
         await new Promise((resolve, reject) => {
             if (userdata.usertype === 'free') {
-                ffmpegCommand = `ffmpeg -i ${videoPath} -i ${watermarkPath} -filter_complex "[1:v] scale=203.2:94.832 [watermark]; [0:v][watermark] overlay=158:301, ass=${assFilePath}" -c:a copy ${outputFilePath}`;
+                if (videoResolution === '16:9') {
+                    ffmpegCommand = `ffmpeg -i ${videoPath} -i ${watermarkPath} -filter_complex "[1:v]scale=203.2:94.832[watermark]; [0:v]scale=1280:720:force_original_aspect_ratio=decrease,pad=1280:720:(ow-iw)/2:(oh-ih)/2,setdar=16/9[scaled]; [scaled][watermark]overlay=158:301,ass=${assFilePath}" -c:a copy ${outputFilePath}`;
+                } else {
+                    ffmpegCommand = `ffmpeg -i ${videoPath} -i ${watermarkPath} -filter_complex "[1:v] scale=203.2:94.832 [watermark]; [0:v][watermark] overlay=158:301, ass=${assFilePath}" -c:a copy ${outputFilePath}`;
+                }
             } else {
-                ffmpegCommand = `ffmpeg -i ${videoPath} -vf "ass=${assFilePath}" -c:a copy ${outputFilePath}`
+                if (videoResolution === '16:9') {
+                    ffmpegCommand = `ffmpeg -i ${videoPath} -vf "scale=1280:720:force_original_aspect_ratio=decrease,pad=1280:720:(ow-iw)/2:(oh-ih)/2,setdar=16/9,ass=${assFilePath}" -c:a copy ${outputFilePath}`;
+                } else {
+                    ffmpegCommand = `ffmpeg -i ${videoPath} -vf "ass=${assFilePath}" -c:a copy ${outputFilePath}`
+                }
+
             }
             exec(ffmpegCommand, (error, stdout, stderr) => {
                 if (error) {
