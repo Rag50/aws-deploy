@@ -197,8 +197,7 @@ app.post('/api/process-video', upload.single('video'), async (req, res) => {
 
 app.post('/api/change-style', upload.single('video'), async (req, res) => {
     try {
-        const { inputVideo, font, color, xPosition, yPosition, srtUrl, Fontsize, userdata, uid, save, keyS3, transcriptions, isOneword, videoResolution } = req.body;
-
+        const { inputVideo, font, color, xPosition, yPosition, srtUrl, Fontsize, userdata, uid, save, keyS3, transcriptions, isOneword, videoResolution, soundEffects } = req.body;
         if (!inputVideo || !font || !color || !xPosition || !yPosition || !srtUrl || !Fontsize || !userdata || !uid) {
             return res.status(400).json({ error: 'Missing required fields in the request body' });
         }
@@ -215,26 +214,67 @@ app.post('/api/change-style', upload.single('video'), async (req, res) => {
 
 
         let remaningmins = 0;
+        let soundEffect = path.join(__dirname, 'MainSounds', 'Copyofding.mp3');
 
-        // Check video length and user type
+        let soundEffectTimestamp = 5000;
+        const videoStreamIndex = 0;
+        const watermarkStreamIndex = 1;
+        const soundEffectStartIndex = watermarkPath ? 2 : 1;
+
+
+        const inputs = [videoPath];
+        if (watermarkPath) inputs.push(watermarkPath);
+        inputs.push(...soundEffects.map(effect => effect.file));
+
+        const soundEffectInputs = soundEffects.map((effect, index) => `-i ${effect.file}`).join(' ');
+
+        const soundEffectFilters = soundEffects.map((effect, index) =>
+            `[${soundEffectStartIndex + index}:a]adelay=${effect.timestamp}|${effect.timestamp}[sfx${index}]`
+        ).join('; ');
+
+        const audioMixFilters = soundEffects.length > 0
+            ? `[${videoStreamIndex}:a]${soundEffects.map((_, index) => `[sfx${index}]`).join('')}amix=inputs=${soundEffects.length + 1}:duration=first[audioMix]`
+            : '[0:a]anullsink[audioMix]';
+
+
+
         let ffmpegCommand;
 
         // const outputFilePath = await downloadVideo(videoPath);
         const outputFilePath = path.join(__dirname, 'uploads', path.basename(videoPath).replace('.mp4', '_output.mp4'));
         await new Promise((resolve, reject) => {
+
             if (userdata.usertype === 'free') {
                 if (videoResolution === '16:9') {
-                    ffmpegCommand = `ffmpeg -i ${videoPath} -i ${watermarkPath} -filter_complex "[1:v]scale=203.2:94.832[watermark]; [0:v]scale=1280:720:force_original_aspect_ratio=decrease,pad=1280:720:(ow-iw)/2:(oh-ih)/2,setdar=16/9[scaled]; [scaled][watermark]overlay=158:301,ass=${assFilePath}" -c:a copy ${outputFilePath}`;
+                    ffmpegCommand = `ffmpeg ${inputs.map(input => `-i "${input}"`).join(' ')} -filter_complex "` +
+                        `[${watermarkStreamIndex}:v]scale=203.2:94.832[watermark]; ` +
+                        `${soundEffectFilters}; ` +
+                        `${audioMixFilters}; ` +
+                        `[${videoStreamIndex}:v]scale=1280:720:force_original_aspect_ratio=decrease,pad=1280:720:(ow-iw)/2:(oh-ih)/2,setdar=16/9[scaled]; ` +
+                        `[scaled][watermark]overlay=158:301,subtitles="${assFilePath}"[outv]" ` +
+                        `-map "[outv]" -map "[audioMix]" -c:v libx264 -c:a aac "${outputFilePath}"`;
                 } else {
-                    ffmpegCommand = `ffmpeg -i ${videoPath} -i ${watermarkPath} -filter_complex "[1:v] scale=203.2:94.832 [watermark]; [0:v][watermark] overlay=158:301, ass=${assFilePath}" -c:a copy ${outputFilePath}`;
+                    ffmpegCommand = `ffmpeg ${inputs.map(input => `-i "${input}"`).join(' ')} -filter_complex "` +
+                        `[${watermarkStreamIndex}:v]scale=203.2:94.832[watermark]; ` +
+                        `${soundEffectFilters}; ` +
+                        `${audioMixFilters}; ` +
+                        `[${videoStreamIndex}:v][watermark]overlay=158:301,subtitles="${assFilePath}"[outv]" ` +
+                        `-map "[outv]" -map "[audioMix]" -c:v libx264 -c:a aac "${outputFilePath}"`;
                 }
             } else {
                 if (videoResolution === '16:9') {
-                    ffmpegCommand = `ffmpeg -i ${videoPath} -vf "scale=1280:720:force_original_aspect_ratio=decrease,pad=1280:720:(ow-iw)/2:(oh-ih)/2,setdar=16/9,ass=${assFilePath}" -c:a copy ${outputFilePath}`;
+                    ffmpegCommand = `ffmpeg ${inputs.map(input => `-i "${input}"`).join(' ')} -filter_complex "` +
+                        `${soundEffectFilters}${soundEffectFilters ? '; ' : ''}` +
+                        `${audioMixFilters}; ` +
+                        `[${videoStreamIndex}:v]scale=1280:720:force_original_aspect_ratio=decrease,pad=1280:720:(ow-iw)/2:(oh-ih)/2,setdar=16/9,subtitles="${assFilePath}"[outv]" ` +
+                        `-map "[outv]" -map "[audioMix]" -c:v libx264 -c:a aac "${outputFilePath}"`;
                 } else {
-                    ffmpegCommand = `ffmpeg -i ${videoPath} -vf "ass=${assFilePath}" -c:a copy ${outputFilePath}`
+                    ffmpegCommand = `ffmpeg ${inputs.map(input => `-i "${input}"`).join(' ')} -filter_complex "` +
+                        `${soundEffectFilters}${soundEffectFilters ? '; ' : ''}` +
+                        `${audioMixFilters}; ` +
+                        `[${videoStreamIndex}:v]subtitles="${assFilePath}"[outv]" ` +
+                        `-map "[outv]" -map "[audioMix]" -c:v libx264 -c:a aac "${outputFilePath}"`;
                 }
-
             }
             exec(ffmpegCommand, (error, stdout, stderr) => {
                 if (error) {
@@ -244,6 +284,8 @@ app.post('/api/change-style', upload.single('video'), async (req, res) => {
                 }
             });
         });
+
+
 
         let outputUpload
         let outputVideoUrl
