@@ -91,6 +91,71 @@ const transporter = nodemailer.createTransport({
     }
 });
 
+const emojiMapping = {
+    "👾": "Smileys/AlienMonster.png",
+    "😠": "Smileys/AngryFaceWithHorns.png",
+    "😟": "Smileys/AnguishedFace.png",
+    "😰": "Smileys/AnxiousFaceWithSweat.png",
+    "😲": "Smileys/AstonishedFace.png",
+    "😁": "Smileys/BeamingFaceWithSmilingEyes.png",
+    "😹": "Smileys/CatWithTearsOfJoy.png",
+    "😼": "Smileys/CatWithWrySmile.png",
+    "😕": "Smileys/ConfusedFace.png",
+    "😞": "Smileys/DisappointedFace.png",
+    "🥸": "Smileys/DisguisedFace.png",
+    "😓": "Smileys/DowncastFaceWithSweat.png",
+    "😑": "Smileys/ExpressionlessFace.png",
+    "😚": "Smileys/FaceBlowingAKiss.png",
+    "🥲": "Smileys/FaceHoldingBackTears.png",
+    "😶‍🌫️": "Smileys/FaceInClouds.png",
+    "😋": "Smileys/FaceSavoringFood.png",
+    "😱": "Smileys/FaceScreamingInFear.png",
+    "😷": "Smileys/FaceWithMedicalMask.png",
+    "🤨": "Smileys/FaceWithRaisedEyebrow.png",
+    "🙄": "Smileys/FaceWithRollingEyes.png",
+    "🌀": "Smileys/FaceWithSpiralEyes.png",
+    "😤": "Smileys/FaceWithSteamFromNose.png",
+    "🤐": "Smileys/FaceWithSymbolsOnMouth.png",
+    "😭": "Smileys/FaceWithTearsOfJoy.png",
+    "😳": "Smileys/FlushedFace.png",
+    "👻": "Smileys/Ghost1.png",
+    "😺": "Smileys/GrinningCatWithSmilingEyes.png",
+    "😃": "Smileys/GrinningFaceWithBigEyes.png",
+    "😀": "Smileys/GrinningFaceWithSmilingEyes.png",
+    "😅": "Smileys/GrinningFaceWithSweat.png",
+    "😆": "Smileys/GrinningSquintingFace.png",
+    "😯": "Smileys/HushedFace.png",
+    "😽": "Smileys/KissingCat.png",
+    "😗": "Smileys/KissingFace.png",
+    "😚": "Smileys/KissingFaceWithClosedEyes.png",
+    "😘": "Smileys/KissingFaceWithSmilingEyes.png",
+    "🤢": "Smileys/NauseatedFace.png",
+    "🤔": "Smileys/PensiveFace.png",
+    "🤗": "Smileys/PerseveringFace.png",
+    "😢": "Smileys/SadButRelievedFace.png",
+    "🫡": "Smileys/SalutingFace.png",
+    "🤝": "Smileys/ShakingFace.png",
+    "🤫": "Smileys/ShushingFace.png",
+    "💀": "Smileys/Skull.png",
+    "☠️": "Smileys/SkullAndCrossbones.png",
+    "😴": "Smileys/SleepingFace.png",
+    "🙁": "Smileys/SlightlyFrowningFace.png",
+    "🙂": "Smileys/SlightlySmilingFace.png",
+    "😻": "Smileys/SmilingCatWithHeartEyes.png",
+    "😊": "Smileys/SmilingFace.png",
+    "😇": "Smileys/SmilingFaceWithHalo.png",
+    "😍": "Smileys/SmilingFaceWithHeartEyes.png",
+    "🥰": "Smileys/SmilingFaceWithHearts.png",
+    "😈": "Smileys/SmilingFaceWithHorns.png",
+    "😎": "Smileys/SmilingFaceWithSunglasses.png",
+    "😢": "Smileys/SmilingFaceWithTear.png",
+    "😏": "Smileys/SmirkingFace.png",
+    "🤧": "Smileys/SneezingFace.png",
+    "😛": "Smileys/SquintingFaceWithTongue.png",
+    "🤩": "Smileys/StarStruck.png",
+    "😑": "Smileys/UnamusedFace.png",
+    "🙃": "Smileys/UpsideDownFace.png"
+};
 
 
 app.post('/api/process-video', upload.single('video'), async (req, res) => {
@@ -99,9 +164,6 @@ app.post('/api/process-video', upload.single('video'), async (req, res) => {
         const videoPath = req.file.path;
         const language = req.body.SelectedLang;
         const isoneWord = req.body.WordLimit === 'true';
-        // const uid = req.body.uid;
-        // const userdata = JSON.parse(req.body.userdata)
-        // console.log(userdata.usertype, uid);
         console.log(isoneWord, "from front");
         let remaningmins = 0;
         const outputPath = `${videoPath}_output.mp4`;
@@ -140,22 +202,6 @@ app.post('/api/process-video', upload.single('video'), async (req, res) => {
         const srtFilePath = path.join(__dirname, 'uploads', `${req.file.filename.replace('.mp4', '')}.srt`);
         fs.writeFileSync(srtFilePath, outputSrt);
 
-        /* const videoDuration = await getVideoDuration(videoPath);
-        console.log(videoDuration);
-
-        if (userdata.usertype === 'free') {
-            if (videoDuration > 3) {
-                return res.status(400).json({ error: 'Video length exceeds 3 minutes limit for free users' });
-            }
-            else {
-                console.log(userdata.videomins, 'user mins');
-                console.log(videoDuration, 'dur');
-                remaningmins = userdata.videomins - videoDuration;
-                console.log(remaningmins);
-            }
-        } else {
-            remaningmins = userdata.videomins - videoDuration;
-        } */
 
 
 
@@ -165,18 +211,6 @@ app.post('/api/process-video', upload.single('video'), async (req, res) => {
         const srtUpload = await uploadToAzure(srtFilePath);
         console.log(videoUpload, srtUpload)
 
-        // const userRef = db.collection('users').doc(uid);
-        // let exact;
-        // if (remaningmins <= 0) {
-        //     exact = 0;
-        // } else {
-        //     exact = remaningmins.toFixed(1);
-        // }
-
-        // console.log(exact, "rounded")
-        // await userRef.update({
-        //     videomins: exact,
-        // });
 
         fs.unlinkSync(videoPath);
         fs.unlinkSync(srtFilePath);
@@ -202,6 +236,7 @@ app.post('/api/change-style', upload.single('video'), async (req, res) => {
             return res.status(400).json({ error: 'Missing required fields in the request body' });
         }
         const watermarkPath = path.join(__dirname, 'watermarks', 'watermark.svg');
+        const tempassFile = path.join(__dirname, 'watermarks', 'temp.ass');
         const videoPath = inputVideo;
         const srtFilePath = path.join(__dirname, 'uploads', `${path.basename(srtUrl)}`);
         const srtResponse = await axios.get(srtUrl);
@@ -214,7 +249,10 @@ app.post('/api/change-style', upload.single('video'), async (req, res) => {
 
 
         let remaningmins = 0;
-        let soundEffect = path.join(__dirname, 'MainSounds', 'Copyofding.mp3');
+
+        let modifedInput = await VideoEmojiprocessing(assFilePath, videoPath, watermarkPath);
+        const inputs = [modifedInput];
+
 
         let soundEffectTimestamp = 5000;
         const videoStreamIndex = 0;
@@ -222,60 +260,62 @@ app.post('/api/change-style', upload.single('video'), async (req, res) => {
         const soundEffectStartIndex = watermarkPath ? 2 : 1;
 
 
-        const inputs = [videoPath];
+
         if (watermarkPath) inputs.push(watermarkPath);
-        inputs.push(...soundEffects.map(effect => effect.file));
 
-        const soundEffectInputs = soundEffects.map((effect, index) => `-i ${effect.file}`).join(' ');
-
-        const soundEffectFilters = soundEffects.map((effect, index) =>
-            `[${soundEffectStartIndex + index}:a]adelay=${effect.timestamp}|${effect.timestamp}[sfx${index}]`
-        ).join('; ');
+        // Handle sound effect inputs and filters only if there are sound effects
+        const soundEffectInputs = soundEffects.length > 0 ? soundEffects.map(effect => `-i ${effect.file}`).join(' ') : '';
+        const soundEffectFilters = soundEffects.length > 0
+            ? soundEffects.map((effect, index) =>
+                `[${soundEffectStartIndex + index}:a]adelay=${effect.timestamp}|${effect.timestamp}[sfx${index}]`
+            ).join('; ') : '';  // If no sound effects, this will be empty
 
         const audioMixFilters = soundEffects.length > 0
             ? `[${videoStreamIndex}:a]${soundEffects.map((_, index) => `[sfx${index}]`).join('')}amix=inputs=${soundEffects.length + 1}:duration=first[audioMix]`
-            : '[0:a]anullsink[audioMix]';
-
-
+            : `[0:a][0:a]amix=inputs=2[audioMix]`;  // If no sound effects, just mix the original audio stream
 
         let ffmpegCommand;
-
-        // const outputFilePath = await downloadVideo(videoPath);
         const outputFilePath = path.join(__dirname, 'uploads', path.basename(videoPath).replace('.mp4', '_output.mp4'));
-        await new Promise((resolve, reject) => {
 
+        // Correctly structure the ffmpeg command to handle all scenarios
+        await new Promise((resolve, reject) => {
             if (userdata.usertype === 'free') {
                 if (videoResolution === '16:9') {
-                    ffmpegCommand = `ffmpeg ${inputs.map(input => `-i "${input}"`).join(' ')} -filter_complex "` +
+                    ffmpegCommand = `ffmpeg ${inputs.map(input => `-i "${input}"`).join(' ')} ${soundEffectInputs} -filter_complex "` +
                         `[${watermarkStreamIndex}:v]scale=203.2:94.832[watermark]; ` +
-                        `${soundEffectFilters}; ` +
-                        `${audioMixFilters}; ` +
+                        `${soundEffectFilters ? `${soundEffectFilters};` : ''} ` + // Add sound effect filters if any
+                        `${audioMixFilters ? `${audioMixFilters};` : ''} ` + // Add audio mix filters if any
                         `[${videoStreamIndex}:v]scale=1280:720:force_original_aspect_ratio=decrease,pad=1280:720:(ow-iw)/2:(oh-ih)/2,setdar=16/9[scaled]; ` +
-                        `[scaled][watermark]overlay=158:301,subtitles="${assFilePath}"[outv]" ` +
+                        `[scaled][watermark]overlay=158:301,subtitles="${tempassFile}"[outv]" ` +
                         `-map "[outv]" -map "[audioMix]" -c:v libx264 -c:a aac "${outputFilePath}"`;
                 } else {
-                    ffmpegCommand = `ffmpeg ${inputs.map(input => `-i "${input}"`).join(' ')} -filter_complex "` +
+                    ffmpegCommand = `ffmpeg ${inputs.map(input => `-i "${input}"`).join(' ')} ${soundEffectInputs} -filter_complex "` +
                         `[${watermarkStreamIndex}:v]scale=203.2:94.832[watermark]; ` +
-                        `${soundEffectFilters}; ` +
-                        `${audioMixFilters}; ` +
-                        `[${videoStreamIndex}:v][watermark]overlay=158:301,subtitles="${assFilePath}"[outv]" ` +
+                        `${soundEffectFilters ? `${soundEffectFilters};` : ''} ` + // Add sound effect filters if any
+                        `${audioMixFilters ? `${audioMixFilters};` : ''} ` + // Add audio mix filters if any
+                        `[${videoStreamIndex}:v][watermark]overlay=158:301,subtitles="${tempassFile}"[outv]" ` +
                         `-map "[outv]" -map "[audioMix]" -c:v libx264 -c:a aac "${outputFilePath}"`;
                 }
             } else {
                 if (videoResolution === '16:9') {
-                    ffmpegCommand = `ffmpeg ${inputs.map(input => `-i "${input}"`).join(' ')} -filter_complex "` +
-                        `${soundEffectFilters}${soundEffectFilters ? '; ' : ''}` +
-                        `${audioMixFilters}; ` +
-                        `[${videoStreamIndex}:v]scale=1280:720:force_original_aspect_ratio=decrease,pad=1280:720:(ow-iw)/2:(oh-ih)/2,setdar=16/9,subtitles="${assFilePath}"[outv]" ` +
+                    ffmpegCommand = `ffmpeg ${inputs.map(input => `-i "${input}"`).join(' ')} ${soundEffectInputs} -filter_complex "` +
+                        `${soundEffectFilters ? `${soundEffectFilters}; ` : ''}` + // Add sound effect filters if any
+                        `${audioMixFilters ? `${audioMixFilters}; ` : ''}` + // Add audio mix filters if any
+                        `[${videoStreamIndex}:v]scale=1280:720:force_original_aspect_ratio=decrease,pad=1280:720:(ow-iw)/2:(oh-ih)/2,setdar=16/9,subtitles="${tempassFile}"[outv]" ` +
                         `-map "[outv]" -map "[audioMix]" -c:v libx264 -c:a aac "${outputFilePath}"`;
                 } else {
-                    ffmpegCommand = `ffmpeg ${inputs.map(input => `-i "${input}"`).join(' ')} -filter_complex "` +
-                        `${soundEffectFilters}${soundEffectFilters ? '; ' : ''}` +
-                        `${audioMixFilters}; ` +
-                        `[${videoStreamIndex}:v]subtitles="${assFilePath}"[outv]" ` +
+                    ffmpegCommand = `ffmpeg ${inputs.map(input => `-i "${input}"`).join(' ')} ${soundEffectInputs} -filter_complex "` +
+                        `${soundEffectFilters ? `${soundEffectFilters}; ` : ''}` + // Add sound effect filters if any
+                        `${audioMixFilters ? `${audioMixFilters}; ` : ''}` + // Add audio mix filters if any
+                        `[${videoStreamIndex}:v]subtitles="${tempassFile}"[outv]" ` +
                         `-map "[outv]" -map "[audioMix]" -c:v libx264 -c:a aac "${outputFilePath}"`;
                 }
             }
+
+
+
+
+
             exec(ffmpegCommand, (error, stdout, stderr) => {
                 if (error) {
                     reject(error);
@@ -284,7 +324,6 @@ app.post('/api/change-style', upload.single('video'), async (req, res) => {
                 }
             });
         });
-
 
 
         let outputUpload
@@ -378,6 +417,7 @@ app.post('/api/change-style', upload.single('video'), async (req, res) => {
         fs.unlinkSync(srtFilePath)
         fs.unlinkSync(assFilePath)
         fs.unlinkSync(outputFilePath)
+        fs.unlinkSync(modifedInput)
 
         res.json({ videoUrl: outputVideoUrl });
     } catch (error) {
@@ -385,7 +425,6 @@ app.post('/api/change-style', upload.single('video'), async (req, res) => {
         res.status(500).json({ error: error.message });
     }
 });
-
 
 
 app.get("/api/payment", async (req, res) => {
@@ -1131,6 +1170,65 @@ const scheduleDocumentDeletion = (collectionPath, docId, delayInMinutes) => {
 };
 
 
+const VideoEmojiprocessing = async (assFilePath, videoPath, watermarkPath) => {
+    console.log("emoji processing");
+    const { subtitles } = parseASS(assFilePath, emojiMapping, assFilePath);
+    const outputFilePath = path.join(__dirname, 'uploads', 'emojitempoutput.mp4');
+
+    // Generate inputs for emojis
+    const emojiInputs = [];
+    let emojiOverlays = '';
+    let overlayIndex = 0;
+
+    subtitles.forEach((subtitle) => {
+        subtitle.emojis.forEach((emoji, index) => {
+            const emojiPng = path.join(__dirname, emojiMapping[emoji]);
+            emojiInputs.push(`-i ${emojiPng}`);
+            const startTime = timeToSeconds(subtitle.start);
+            const endTime = timeToSeconds(subtitle.end);
+
+            // Calculate emoji position
+            const emojiSize = 45;
+            const emojiX = `${subtitle.x}-${emojiSize / 2}`; // Center the emoji
+            const emojiY = `${subtitle.y}-${emojiSize}`; // Place emoji above text
+
+            emojiOverlays += `
+      [${overlayIndex + 1}:v]scale=${emojiSize}:${emojiSize}[emoji${overlayIndex}];
+      [scaled][emoji${overlayIndex}]overlay=x='${emojiX}':y='${emojiY}':enable='between(t,${startTime},${endTime})'[scaled];
+    `;
+
+            overlayIndex++;
+        });
+    });
+
+
+
+    const ffmpegCommand = `
+    ffmpeg -i ${videoPath} ${emojiInputs.join(' ')} \
+    -filter_complex "
+    [0:v]scale=720:1280[scaled];
+    ${emojiOverlays}
+    [scaled]subtitles=${assFilePath}:force_style='FontSize=18'[final]" \
+    -map [final] -map 0:a -c:a copy ${outputFilePath}
+  `;
+
+
+
+    // Return a promise that resolves only after ffmpeg processing is complete
+    return new Promise((resolve, reject) => {
+        exec(ffmpegCommand, (error, stdout, stderr) => {
+            if (error) {
+                console.error('Error during FFmpeg processing:', error);
+                reject(error);
+            } else {
+                console.log('FFmpeg processing completed');
+                resolve(outputFilePath);
+            }
+        });
+    });
+};
+
+
 function generateOrderId() {
     const uniqueId = crypto.randomBytes(16).toString("hex");
 
@@ -1142,6 +1240,92 @@ function generateOrderId() {
 
     return orderId.substr(0, 12);
 }
+
+function parseStyles(lines) {
+    const styleSection = lines.findIndex((line) => line.trim() === '[V4+ Styles]');
+    if (styleSection === -1) return null;
+
+    const formatLine = lines[styleSection + 1];
+    const styleLine = lines[styleSection + 2];
+
+    if (!formatLine || !styleLine) return null;
+
+    const formatFields = formatLine.split(':')[1].split(',').map(f => f.trim());
+    const styleFields = styleLine.split(':')[1].split(',').map(f => f.trim());
+
+    const style = {};
+    formatFields.forEach((field, index) => {
+        style[field] = styleFields[index];
+    });
+
+    return style;
+}
+
+
+function parseASS(file, emojiMapping, outputPath) {
+    const content = fs.readFileSync(file, 'utf-8');
+    const lines = content.split('\n');
+    const subtitles = [];
+    const modifiedLines = [...lines];
+
+    // Parse style information
+    const style = parseStyles(lines); // Ensure `parseStyles` is defined
+    const videoHeight = 1280; // Assuming 720p video
+    const videoWidth = 780;
+
+    const marginV = parseFloat(style?.MarginV || 101.25);
+    const alignment = parseInt(style?.Alignment || 2);
+
+    const defaultY = videoHeight - marginV;
+
+    // Find the `[Events]` section
+    const eventsStart = lines.findIndex((line) => line.trim() === '[Events]');
+    if (eventsStart === -1) return { subtitles, modifiedLines };
+
+    const formatLine = lines[eventsStart + 1];
+    const formatFields = formatLine.split(':')[1].split(',').map((field) => field.trim());
+    const textIndex = formatFields.indexOf('Text');
+    if (textIndex === -1) return { subtitles, modifiedLines };
+
+    const events = lines.slice(eventsStart + 2).filter((line) => line.startsWith('Dialogue:'));
+
+    events.forEach((line, lineIndex) => {
+        const parts = line.split(',');
+        const start = parts[1].trim();
+        const end = parts[2].trim();
+        const text = parts.slice(textIndex).join(',').trim();
+
+        const emojis = [...text].filter((char) => emojiMapping[char]);
+
+        if (emojis.length > 0) {
+            const emojiRegex =
+                /[\u{1F600}-\u{1F64F}]|[\u{1F300}-\u{1F5FF}]|[\u{1F680}-\u{1F6FF}]|[\u{2600}-\u{26FF}]|[\u{2700}-\u{27BF}]|[\u{1F1E0}-\u{1F1FF}]|[\u{1F900}-\u{1F9FF}]|[\u{1FA70}-\u{1FAFF}]|[\u{1F018}-\u{1F270}]|[\u{238C}-\u{2454}]|[\u{20D0}-\u{20FF}]|[\u{1F000}-\u{1F02B}]/gu;
+            const textWithoutEmoji = text.replace(emojiRegex, '').trim();
+
+            const x = videoWidth / 2;
+            const y = defaultY;
+
+            subtitles.push({
+                start,
+                end,
+                text: textWithoutEmoji,
+                emojis,
+                x,
+                y,
+            });
+
+            // Modify the line in the ASS file
+            const modifiedLine = parts.slice(0, textIndex).join(',') + ',' + textWithoutEmoji;
+            modifiedLines[eventsStart + 2 + lineIndex] = modifiedLine;
+        }
+    });
+
+    // Write the modified ASS file to the output path
+    fs.writeFileSync(outputPath, modifiedLines.join('\n'), 'utf-8');
+
+    return { subtitles, modifiedLines };
+}
+
 
 app.listen(3000, () => console.log('Server running on port 3000'));
 
