@@ -12,6 +12,7 @@ const slug = require('slug');
 const OpenAI = require('openai');
 const { getFirestore, doc, setDoc, getDoc, updateDoc } = require('firebase-admin/firestore');
 const admin = require('firebase-admin');
+const { getAuth } = require("firebase-admin/auth");
 const AWS = require('aws-sdk');
 const temp = require('temp');
 const { BlobServiceClient } = require('@azure/storage-blob');
@@ -761,6 +762,178 @@ footer {
 
 
 
+app.post("/api/sendVerificationCode-email-auth", async (req, res) => {
+    const { email } = req.body;
+
+    if (!email) {
+        return res.status(400).json({ message: "Email is required" });
+    }
+
+    const verificationCode = Math.floor(1000 + Math.random() * 9000);  
+
+    try {
+        // Save the code to Firestore
+        await db.collection("verificationCodes").doc(email).set({
+            code: verificationCode,
+            expiresAt: Date.now() + 1 * 60 * 1000, 
+        });
+
+
+        const mailOptions = {
+            from: '"Capsai" <ai.editor@capsai.co>',
+            to: email,
+            subject: "Your Verification Code",
+            html: `
+          <!DOCTYPE html>
+          <html>
+          <head>
+            <meta charset="utf-8">
+            <meta name="viewport" content="initial-scale=1, width=device-width">
+            <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Gilroy:wght@400;600;700;800&display=swap" />
+            <style>
+              .frame-child {
+                width: 47px;
+                position: relative;
+                height: 45.4px;
+              }
+              .verify-your-email {
+                font-weight: 600;
+              }
+              .capsai {
+                font-weight: 800;
+              }
+              .verify-your-email-container {
+                align-self: stretch;
+                position: relative;
+              }
+              .to-complete-the {
+                width: 372px;
+                position: relative;
+                font-size: 16px;
+                color: rgba(0, 0, 0, 0.5);
+                display: inline-block;
+              }
+              .verify-your-email-to-sign-up-f-parent {
+                align-self: stretch;
+                display: flex;
+                flex-direction: column;
+                align-items: center;
+                justify-content: flex-start;
+                gap: 10px;
+              }
+              .b {
+                width: 85px;
+                position: relative;
+                letter-spacing: 0.1em;
+                display: inline-block;
+                height: 24px;
+                flex-shrink: 0;
+              }
+              .wrapper {
+                align-self: stretch;
+                border-radius: 14px;
+                background-color: #f6f6f6;
+                display: flex;
+                flex-direction: row;
+                align-items: center;
+                justify-content: center;
+                padding: 20px 200px;
+                text-align: left;
+                font-size: 24px;
+              }
+              .frame-parent {
+                align-self: stretch;
+                display: flex;
+                flex-direction: column;
+                align-items: center;
+                justify-content: flex-start;
+                gap: 42px;
+              }
+              .group-parent {
+                width: 100%;
+                position: relative;
+                border-radius: 14px;
+                background-color: #fff;
+                display: flex;
+                flex-direction: column;
+                align-items: center;
+                justify-content: flex-start;
+                padding: 32px;
+                box-sizing: border-box;
+                gap: 31px;
+                text-align: center;
+                font-size: 20px;
+                color: #000;
+                font-family: Gilroy;
+              }
+            </style>
+          </head>
+          <body>
+            <div class="group-parent">
+              <img class="frame-child" alt="" src="Group 1686554423.svg">
+              <div class="frame-parent">
+                <div class="verify-your-email-to-sign-up-f-parent">
+                  <div class="verify-your-email-container">
+                    <span class="verify-your-email">Verify your email to sign up for </span>
+                    <span class="capsai">CapsAI</span>
+                  </div>
+                  <div class="to-complete-the">
+                    To complete the sign-up process, enter this 6-digit code in the original window:
+                  </div>
+                </div>
+                <div class="wrapper">
+                  <b class="b">${verificationCode}</b>
+                </div>
+              </div>
+            </div>
+          </body>
+          </html>
+          `,
+        };
+
+
+
+
+        transporter.sendMail(mailOptions, (error, info) => {
+            if (error) {
+                console.log(error);
+                res.status(500).send('Error sending email');
+            } else {
+                console.log('Email sent: ' + info.response);
+                res.status(200).send('Email sent successfully');
+            }
+        });
+
+        res.status(200).json({ message: "Verification code sent" });
+    } catch (error) {
+        console.error("Error sending verification code:", error);
+        res.status(500).json({ message: "Failed to send email", error: error.message });
+    }
+});
+
+
+app.post("/api/verifyCode-email-auth", async (req, res) => {
+    const { email, code, uid } = req.body;
+    console.log(email, code, uid);
+
+    if (!email || !code) {
+        return res.status(400).json({ message: "Email and code are required." });
+    }
+
+    const doc = await db.collection("verificationCodes").doc(email).get();
+    if (!doc.exists || doc.data().code !== code || Date.now() > doc.data().expiresAt) {
+        return res.status(400).json({ message: "Invalid or expired code." });
+    }
+
+   
+    await db.collection("verificationCodes").doc(email).delete();
+
+    
+    const auth = getAuth();
+    const customToken = await auth.createCustomToken(email);
+
+    res.status(200).json({ token: customToken });
+});
 
 
 
