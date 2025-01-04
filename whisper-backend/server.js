@@ -753,11 +753,24 @@ app.post('/api/change-style', upload.single('video'), async (req, res) => {
         const assFilePath = path.join(__dirname, 'uploads', 'subtitles.ass');
         fs.writeFileSync(assFilePath, assContent);
         const tempOutputPath = temp.path({ suffix: '.mp4' });
+        let resheight;
+        let resWidth;
+
+        if (videoResolution == '16:9') {
+            resheight = 1080;
+            resWidth = 1920;
+        } else if (videoResolution == '1:1') {
+            resheight = 1080;
+            resWidth = 1080;
+        } else {
+            resWidth = 720;
+            resheight = 1280;
+        }
 
 
         let remaningmins = 0;
 
-        let modifedInput = await VideoEmojiprocessing(assFilePath, videoPath, watermarkPath);
+        let modifedInput = await VideoEmojiprocessing(assFilePath, videoPath, watermarkPath, resWidth , resheight);
         const inputs = [modifedInput];
 
 
@@ -792,23 +805,23 @@ app.post('/api/change-style', upload.single('video'), async (req, res) => {
                         `[${watermarkStreamIndex}:v]scale=150:70[watermark]; ` +
                         `${soundEffectFilters ? `${soundEffectFilters};` : ''} ` +
                         `${audioMixFilters ? `${audioMixFilters};` : ''} ` +
-                        `[${videoStreamIndex}:v]scale=1280:720:force_original_aspect_ratio=decrease,pad=1280:720:(ow-iw)/2:(oh-ih)/2,setdar=16/9[scaled]; ` +
-                        `[scaled][watermark]overlay=700:190,subtitles="${tempassFile}":force_style='Alignment=2'[outv]" ` +
+                        `[${videoStreamIndex}:v]scale=${resWidth}:${resheight}:force_original_aspect_ratio=decrease,pad=${resWidth}:${resheight}:(ow-iw)/2:(oh-ih)/2,setdar=16/9[scaled]; ` +
+                        `[scaled][watermark]overlay=1700:190,subtitles="${tempassFile}":force_style='Alignment=2'[outv]" ` +
                         `-map "[outv]" -map "[audioMix]" -c:v libx264 -c:a aac "${outputFilePath}"`;
                 } else if (videoResolution === '1:1') {
                     ffmpegCommand = `ffmpeg ${inputs.map(input => `-i "${input}"`).join(' ')} ${soundEffectInputs} -filter_complex "` +
                         `[${watermarkStreamIndex}:v]scale=150:70[watermark]; ` +
                         `${soundEffectFilters ? `${soundEffectFilters};` : ''} ` +
                         `${audioMixFilters ? `${audioMixFilters};` : ''} ` +
-                        `[${videoStreamIndex}:v]scale=720:720:force_original_aspect_ratio=decrease,pad=720:720:(ow-iw)/2:(oh-ih)/2,setdar=1/1[scaled]; ` +
-                        `[scaled][watermark]overlay=400:158,subtitles="${tempassFile}":force_style='Alignment=2'[outv]" ` +
+                        `[${videoStreamIndex}:v]scale=${resWidth}:${resheight}:force_original_aspect_ratio=decrease,pad=${resWidth}:${resheight}:(ow-iw)/2:(oh-ih)/2,setdar=1/1[scaled]; ` +
+                        `[scaled][watermark]overlay=860:158,subtitles="${tempassFile}":force_style='Alignment=2'[outv]" ` +
                         `-map "[outv]" -map "[audioMix]" -c:v libx264 -c:a aac "${outputFilePath}"`;
                 } else {
                     ffmpegCommand = `ffmpeg ${inputs.map(input => `-i "${input}"`).join(' ')} ${soundEffectInputs} -filter_complex "` +
                         `[${watermarkStreamIndex}:v]scale=203.2:94.832[watermark]; ` +
                         `${soundEffectFilters ? `${soundEffectFilters};` : ''} ` +
                         `${audioMixFilters ? `${audioMixFilters};` : ''} ` +
-                        `[${videoStreamIndex}:v][watermark]overlay=494:310,subtitles="${tempassFile}":force_style='Alignment=2'[outv]" ` +
+                        `[${videoStreamIndex}:v][watermark]overlay=494:190,subtitles="${tempassFile}":force_style='Alignment=2'[outv]" ` +
                         `-map "[outv]" -map "[audioMix]" -c:v libx264 -c:a aac "${outputFilePath}"`;
                 }
             } else {
@@ -816,13 +829,13 @@ app.post('/api/change-style', upload.single('video'), async (req, res) => {
                     ffmpegCommand = `ffmpeg ${inputs.map(input => `-i "${input}"`).join(' ')} ${soundEffectInputs} -filter_complex "` +
                         `${soundEffectFilters ? `${soundEffectFilters}; ` : ''}` +
                         `${audioMixFilters ? `${audioMixFilters}; ` : ''}` +
-                        `[${videoStreamIndex}:v]scale=1280:720:force_original_aspect_ratio=decrease,pad=1280:720:(ow-iw)/2:(oh-ih)/2,setdar=16/9,subtitles="${tempassFile}":force_style='Alignment=2'[outv]" ` +
+                        `[${videoStreamIndex}:v]scale=${resWidth}:${resheight}:force_original_aspect_ratio=decrease,pad=${resWidth}:${resheight}:(ow-iw)/2:(oh-ih)/2,setdar=16/9,subtitles="${tempassFile}":force_style='Alignment=2'[outv]" ` +
                         `-map "[outv]" -map "[audioMix]" -c:v libx264 -c:a aac "${outputFilePath}"`;
                 } else if (videoResolution === '1:1') {
                     ffmpegCommand = `ffmpeg ${inputs.map(input => `-i "${input}"`).join(' ')} ${soundEffectInputs} -filter_complex "` +
                         `${soundEffectFilters ? `${soundEffectFilters}; ` : ''}` +
                         `${audioMixFilters ? `${audioMixFilters}; ` : ''}` +
-                        `[${videoStreamIndex}:v]scale=720:720:force_original_aspect_ratio=decrease,pad=720:720:(ow-iw)/2:(oh-ih)/2,setdar=1/1,subtitles="${tempassFile}":force_style='Alignment=2'[outv]" ` +
+                        `[${videoStreamIndex}:v]scale=${resWidth}:${resheight}:force_original_aspect_ratio=decrease,pad=${resWidth}:${resheight}:(ow-iw)/2:(oh-ih)/2,setdar=1/1,subtitles="${tempassFile}":force_style='Alignment=2'[outv]" ` +
                         `-map "[outv]" -map "[audioMix]" -c:v libx264 -c:a aac "${outputFilePath}"`;
                 } else {
                     ffmpegCommand = `ffmpeg ${inputs.map(input => `-i "${input}"`).join(' ')} ${soundEffectInputs} -filter_complex "` +
@@ -1863,7 +1876,7 @@ const scheduleDocumentDeletion = (collectionPath, docId, delayInMinutes) => {
 };
 
 
-const VideoEmojiprocessing = async (assFilePath, videoPath, watermarkPath) => {
+const VideoEmojiprocessing = async (assFilePath, videoPath, watermarkPath, resWidth , resheight) => {
     console.log("emoji processing started");
 
     try {
@@ -1902,7 +1915,7 @@ const VideoEmojiprocessing = async (assFilePath, videoPath, watermarkPath) => {
         const emojiInputs = Array.from(emojiMap.keys()).map(path => `-i "${path}"`).join(' ');
 
         // Create filter complex command with optimized chain
-        let filterComplex = `[0:v]scale=720:1280[tmp0];`;
+        let filterComplex = `[0:v]scale=${resWidth}:${resheight}[tmp0];`;
         overlayCommands.forEach((overlay, index) => {
             filterComplex += overlay.command.replace('[scaled]', `[tmp${index}]`);
         });
