@@ -1900,7 +1900,8 @@ const VideoEmojiprocessing = async (assFilePath, videoPath, watermarkPath, resWi
                 const endTime = timeToSeconds(subtitle.end);
                 const emojiSize = 45;
                 const emojiX = `${subtitle.x}-${emojiSize / 2}`;
-                const emojiY = `${subtitle.y}-${emojiSize}`;
+                const emojiY = `${subtitle.y} - 250`;
+
 
                 overlayCommands.push({
                     inputIndex: emojiMap.get(emojiPng),
