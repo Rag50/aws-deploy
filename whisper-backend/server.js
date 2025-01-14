@@ -770,7 +770,7 @@ app.post('/api/change-style', upload.single('video'), async (req, res) => {
 
         let remaningmins = 0;
 
-        let modifedInput = await VideoEmojiprocessing(assFilePath, videoPath, watermarkPath, resWidth , resheight);
+        let modifedInput = await VideoEmojiprocessing(assFilePath, videoPath, watermarkPath, resWidth, resheight);
         const inputs = [modifedInput];
 
 
@@ -961,6 +961,20 @@ app.post('/api/change-style', upload.single('video'), async (req, res) => {
 });
 
 
+app.post('/api/aiemoji-sync', async (req, res) => {
+    try {
+        const { transcriptions } = req.body;
+        let transcription = await addEmojisToTranscription(transcriptions);
+
+        res.json({ transcriptions: transcription });
+
+    } catch (error) {
+        console.error('Error changing style:', error);
+        res.status(500).json({ error: error.message });
+    }
+
+})
+
 app.get("/api/payment", async (req, res) => {
     console.log('its in payment')
     try {
@@ -1011,6 +1025,47 @@ app.post("/api/verify", async (req, res) => {
         console.log(error);
     }
 });
+
+async function addEmojisToTranscription(transcriptionArray) {
+    // Create a single prompt that includes all transcriptions
+    const combinedPrompt = `Suggest appropriate emojis for the following texts. Only return emojis in the same order:
+${transcriptionArray.map((t, index) => `${index + 1}. "${t.value}"`).join('\n')}`;
+
+    try {
+        const response = await openai.chat.completions.create({
+            messages: [{ role: 'user', content: combinedPrompt }],
+            model: "gpt-4o-mini-2024-07-18",
+        });
+
+        // Check if we have a valid response structure
+        if (response?.choices?.[0]?.message?.content) {
+            // Split the response into individual emojis
+            const emojis = response.choices[0].message.content
+                .trim()
+                .split('\n')
+                .map(line => line.replace(/^\d+\.\s*/, '').trim())
+                .filter(emoji => emoji); // Remove any empty lines
+
+            // Map the original transcriptions with their corresponding emojis
+            return transcriptionArray.map((transcription, index) => ({
+                ...transcription,
+                value: `${transcription.value} ${emojis[index] || ''}` // Include index and emoji
+            }));
+        } else {
+            console.error('Unexpected response structure:', response);
+            return transcriptionArray.map(transcription => ({
+                ...transcription,
+                value: transcription.value // Return original without emoji
+            }));
+        }
+    } catch (error) {
+        console.error('Error processing transcriptions:', error.message);
+        return transcriptionArray.map(transcription => ({
+            ...transcription,
+            value: transcription.value // Return original without emoji
+        }));
+    }
+}
 
 
 
@@ -1737,8 +1792,6 @@ Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
     return assHeader + assEvents;
 };
 
-
-
 function processTranscriptionToSRT(segments, wordLimit) {
     let srt = '';
     let index = 1;
@@ -1876,59 +1929,150 @@ const scheduleDocumentDeletion = (collectionPath, docId, delayInMinutes) => {
 };
 
 
-const VideoEmojiprocessing = async (assFilePath, videoPath, watermarkPath, resWidth , resheight) => {
-    console.log("emoji processing started");
+// const VideoEmojiprocessing = async (assFilePath, videoPath, watermarkPath, resWidth, resheight) => {
+//     console.log("emoji processing started");
 
+//     try {
+//         const { subtitles } = parseASS(assFilePath, emojiMapping, assFilePath);
+//         const outputFilePath = path.join(__dirname, 'uploads', `emojitempoutput_${Date.now()}.mp4`);
+
+//         // Optimize emoji processing by batching
+//         const emojiMap = new Map(); // Store unique emojis
+//         const overlayCommands = [];
+//         let overlayIndex = 0;
+
+//         // Pre-process subtitles to identify unique emojis and generate overlay commands
+//         subtitles.forEach((subtitle) => {
+//             subtitle.emojis.forEach((emoji) => {
+//                 const emojiPng = path.join(__dirname, emojiMapping[emoji]);
+//                 if (!emojiMap.has(emojiPng)) {
+//                     emojiMap.set(emojiPng, overlayIndex + 1);
+//                 }
+
+//                 const startTime = timeToSeconds(subtitle.start);
+//                 const endTime = timeToSeconds(subtitle.end);
+//                 const emojiSize = 45;
+//                 const emojiX = `${subtitle.x} - ${emojiSize}`;
+//                 const emojiY = `${subtitle.y} - 400`;
+
+
+//                 overlayCommands.push({
+//                     inputIndex: emojiMap.get(emojiPng),
+//                     command: `[${emojiMap.get(emojiPng)}:v]scale=${emojiSize}:${emojiSize}[emoji${overlayIndex}];
+//                     [tmp${overlayIndex}][emoji${overlayIndex}]overlay=x='${emojiX}':y='${emojiY}':enable='between(t,${startTime},${endTime})'[tmp${overlayIndex + 1}];`
+//                 });
+//                 overlayIndex++;
+//             });
+//         });
+
+//         // Build optimized FFmpeg command
+//         const emojiInputs = Array.from(emojiMap.keys()).map(path => `-i "${path}"`).join(' ');
+
+//         // Create filter complex command with optimized chain
+//         let filterComplex = `[0:v]scale=${resWidth}:${resheight}[tmp0];`;
+//         overlayCommands.forEach((overlay, index) => {
+//             filterComplex += overlay.command.replace('[scaled]', `[tmp${index}]`);
+//         });
+
+//         // Add final subtitle overlay
+//         filterComplex += `[tmp${overlayCommands.length}]subtitles=${assFilePath}:force_style='FontSize=18'[final]`;
+
+//         const ffmpegCommand = `ffmpeg -i "${videoPath}" ${emojiInputs} -filter_complex "${filterComplex}" -map "[final]" -map 0:a -c:a copy -preset veryfast -y "${outputFilePath}"`;
+
+//         // Add timeout and progress monitoring
+//         const maxExecutionTime = 300000; // 5 minutes timeout
+//         const ffmpegProcess = exec(ffmpegCommand, { maxBuffer: 1024 * 1024 * 10 }); // Increase buffer size
+
+//         let lastProgress = Date.now();
+//         ffmpegProcess.stderr.on('data', (data) => {
+//             lastProgress = Date.now();
+//             console.log(`FFmpeg progress: ${data}`);
+//         });
+
+//         return new Promise((resolve, reject) => {
+//             const timeoutId = setTimeout(() => {
+//                 ffmpegProcess.kill();
+//                 reject(new Error('FFmpeg processing timed out'));
+//             }, maxExecutionTime);
+
+//             ffmpegProcess.on('error', (error) => {
+//                 clearTimeout(timeoutId);
+//                 reject(error);
+//             });
+
+//             ffmpegProcess.on('exit', (code) => {
+//                 clearTimeout(timeoutId);
+//                 if (code === 0) {
+//                     console.log('FFmpeg processing completed successfully');
+//                     resolve(outputFilePath);
+//                 } else {
+//                     reject(new Error(`FFmpeg process exited with code ${code}`));
+//                 }
+//             });
+//         });
+//     } catch (error) {
+//         console.error('Error in VideoEmojiprocessing:', error);
+//         throw error;
+//     }
+// };
+
+
+const VideoEmojiprocessing = async (assFilePath, videoPath, watermarkPath, resWidth, resHeight) => {
+    console.log("Emoji processing started");
     try {
         const { subtitles } = parseASS(assFilePath, emojiMapping, assFilePath);
         const outputFilePath = path.join(__dirname, 'uploads', `emojitempoutput_${Date.now()}.mp4`);
 
-        // Optimize emoji processing by batching
-        const emojiMap = new Map(); // Store unique emojis
+        const emojiMap = new Map();
         const overlayCommands = [];
+        const emojiInputs = [];
         let overlayIndex = 0;
 
-        // Pre-process subtitles to identify unique emojis and generate overlay commands
-        subtitles.forEach((subtitle) => {
-            subtitle.emojis.forEach((emoji) => {
+       
+        for (const subtitle of subtitles) {
+           
+            const validEmojis = subtitle.emojis.filter(emoji => {
+                const emojiPng = emojiMapping[emoji] ? path.join(__dirname, emojiMapping[emoji]) : null;
+                return emojiPng && fs.existsSync(emojiPng);
+            });
+
+            for (const emoji of validEmojis) {
                 const emojiPng = path.join(__dirname, emojiMapping[emoji]);
                 if (!emojiMap.has(emojiPng)) {
-                    emojiMap.set(emojiPng, overlayIndex + 1);
+                    emojiMap.set(emojiPng, emojiInputs.length + 1);
+                    emojiInputs.push(`-i "${emojiPng}"`);
                 }
 
                 const startTime = timeToSeconds(subtitle.start);
                 const endTime = timeToSeconds(subtitle.end);
                 const emojiSize = 45;
-                const emojiX = `${subtitle.x}-${emojiSize / 2}`;
-                const emojiY = `${subtitle.y} - 250`;
-
+                const emojiX = `${subtitle.x} - ${emojiSize}`;
+                const emojiY = `${subtitle.y} - 400`;
 
                 overlayCommands.push({
                     inputIndex: emojiMap.get(emojiPng),
                     command: `[${emojiMap.get(emojiPng)}:v]scale=${emojiSize}:${emojiSize}[emoji${overlayIndex}];
-                    [tmp${overlayIndex}][emoji${overlayIndex}]overlay=x='${emojiX}':y='${emojiY}':enable='between(t,${startTime},${endTime})'[tmp${overlayIndex + 1}];`
+                      [tmp${overlayIndex}][emoji${overlayIndex}]overlay=x='${emojiX}':y='${emojiY}':enable='between(t,${startTime},${endTime})'[tmp${overlayIndex + 1}];`
                 });
                 overlayIndex++;
+            }
+        }
+
+       
+        let filterComplex = `[0:v]scale=${resWidth}:${resHeight}[tmp0];`;
+
+        if (overlayCommands.length > 0) {
+            overlayCommands.forEach((overlay, index) => {
+                filterComplex += overlay.command.replace('[scaled]', `[tmp${index}]`);
             });
-        });
+        }
 
-        // Build optimized FFmpeg command
-        const emojiInputs = Array.from(emojiMap.keys()).map(path => `-i "${path}"`).join(' ');
+        filterComplex += `[tmp${overlayCommands.length}]subtitles=${assFilePath}:force_style='FontSize=18'[final];`;
 
-        // Create filter complex command with optimized chain
-        let filterComplex = `[0:v]scale=${resWidth}:${resheight}[tmp0];`;
-        overlayCommands.forEach((overlay, index) => {
-            filterComplex += overlay.command.replace('[scaled]', `[tmp${index}]`);
-        });
+        const ffmpegCommand = `ffmpeg -i "${videoPath}" ${emojiInputs.join(' ')} -filter_complex "${filterComplex}" -map "[final]" -map 0:a -c:a copy -preset veryfast -y "${outputFilePath}"`;
 
-        // Add final subtitle overlay
-        filterComplex += `[tmp${overlayCommands.length}]subtitles=${assFilePath}:force_style='FontSize=18'[final]`;
-
-        const ffmpegCommand = `ffmpeg -i "${videoPath}" ${emojiInputs} -filter_complex "${filterComplex}" -map "[final]" -map 0:a -c:a copy -preset veryfast -y "${outputFilePath}"`;
-
-        // Add timeout and progress monitoring
-        const maxExecutionTime = 300000; // 5 minutes timeout
-        const ffmpegProcess = exec(ffmpegCommand, { maxBuffer: 1024 * 1024 * 10 }); // Increase buffer size
+        const maxExecutionTime = 300000;
+        const ffmpegProcess = exec(ffmpegCommand, { maxBuffer: 1024 * 1024 * 10 });
 
         let lastProgress = Date.now();
         ffmpegProcess.stderr.on('data', (data) => {
@@ -1962,6 +2106,8 @@ const VideoEmojiprocessing = async (assFilePath, videoPath, watermarkPath, resWi
         throw error;
     }
 };
+
+
 
 
 function generateOrderId() {
