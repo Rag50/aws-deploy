@@ -1043,7 +1043,7 @@ ${transcriptionArray.map((t, index) => `${index + 1}. "${t.value}"`).join('\n')}
             const emojis = response.choices[0].message.content
                 .trim()
                 .split('\n')
-                .map(line => line.replace(/^\d+\.\s*/, '').trim())
+                .map(line => line.replace(/^\d+\.\s*/, '').replace(/".*?"/, '').trim())
                 .filter(emoji => emoji); // Remove any empty lines
 
             // Map the original transcriptions with their corresponding emojis
@@ -1927,95 +1927,6 @@ const scheduleDocumentDeletion = (collectionPath, docId, delayInMinutes) => {
 
     console.log(`Scheduled document deletion for ${docId} at ${date}`);
 };
-
-
-// const VideoEmojiprocessing = async (assFilePath, videoPath, watermarkPath, resWidth, resheight) => {
-//     console.log("emoji processing started");
-
-//     try {
-//         const { subtitles } = parseASS(assFilePath, emojiMapping, assFilePath);
-//         const outputFilePath = path.join(__dirname, 'uploads', `emojitempoutput_${Date.now()}.mp4`);
-
-//         // Optimize emoji processing by batching
-//         const emojiMap = new Map(); // Store unique emojis
-//         const overlayCommands = [];
-//         let overlayIndex = 0;
-
-//         // Pre-process subtitles to identify unique emojis and generate overlay commands
-//         subtitles.forEach((subtitle) => {
-//             subtitle.emojis.forEach((emoji) => {
-//                 const emojiPng = path.join(__dirname, emojiMapping[emoji]);
-//                 if (!emojiMap.has(emojiPng)) {
-//                     emojiMap.set(emojiPng, overlayIndex + 1);
-//                 }
-
-//                 const startTime = timeToSeconds(subtitle.start);
-//                 const endTime = timeToSeconds(subtitle.end);
-//                 const emojiSize = 45;
-//                 const emojiX = `${subtitle.x} - ${emojiSize}`;
-//                 const emojiY = `${subtitle.y} - 400`;
-
-
-//                 overlayCommands.push({
-//                     inputIndex: emojiMap.get(emojiPng),
-//                     command: `[${emojiMap.get(emojiPng)}:v]scale=${emojiSize}:${emojiSize}[emoji${overlayIndex}];
-//                     [tmp${overlayIndex}][emoji${overlayIndex}]overlay=x='${emojiX}':y='${emojiY}':enable='between(t,${startTime},${endTime})'[tmp${overlayIndex + 1}];`
-//                 });
-//                 overlayIndex++;
-//             });
-//         });
-
-//         // Build optimized FFmpeg command
-//         const emojiInputs = Array.from(emojiMap.keys()).map(path => `-i "${path}"`).join(' ');
-
-//         // Create filter complex command with optimized chain
-//         let filterComplex = `[0:v]scale=${resWidth}:${resheight}[tmp0];`;
-//         overlayCommands.forEach((overlay, index) => {
-//             filterComplex += overlay.command.replace('[scaled]', `[tmp${index}]`);
-//         });
-
-//         // Add final subtitle overlay
-//         filterComplex += `[tmp${overlayCommands.length}]subtitles=${assFilePath}:force_style='FontSize=18'[final]`;
-
-//         const ffmpegCommand = `ffmpeg -i "${videoPath}" ${emojiInputs} -filter_complex "${filterComplex}" -map "[final]" -map 0:a -c:a copy -preset veryfast -y "${outputFilePath}"`;
-
-//         // Add timeout and progress monitoring
-//         const maxExecutionTime = 300000; // 5 minutes timeout
-//         const ffmpegProcess = exec(ffmpegCommand, { maxBuffer: 1024 * 1024 * 10 }); // Increase buffer size
-
-//         let lastProgress = Date.now();
-//         ffmpegProcess.stderr.on('data', (data) => {
-//             lastProgress = Date.now();
-//             console.log(`FFmpeg progress: ${data}`);
-//         });
-
-//         return new Promise((resolve, reject) => {
-//             const timeoutId = setTimeout(() => {
-//                 ffmpegProcess.kill();
-//                 reject(new Error('FFmpeg processing timed out'));
-//             }, maxExecutionTime);
-
-//             ffmpegProcess.on('error', (error) => {
-//                 clearTimeout(timeoutId);
-//                 reject(error);
-//             });
-
-//             ffmpegProcess.on('exit', (code) => {
-//                 clearTimeout(timeoutId);
-//                 if (code === 0) {
-//                     console.log('FFmpeg processing completed successfully');
-//                     resolve(outputFilePath);
-//                 } else {
-//                     reject(new Error(`FFmpeg process exited with code ${code}`));
-//                 }
-//             });
-//         });
-//     } catch (error) {
-//         console.error('Error in VideoEmojiprocessing:', error);
-//         throw error;
-//     }
-// };
-
 
 const VideoEmojiprocessing = async (assFilePath, videoPath, watermarkPath, resWidth, resHeight) => {
     console.log("Emoji processing started");
