@@ -1,7 +1,7 @@
 const express = require('express')
 const multer = require('multer')
 const fs = require('fs')
-const { exec } = require('child_process')
+const { exec, execSync } = require('child_process')
 const ffmpeg = require('fluent-ffmpeg')
 const path = require('path');
 const axios = require('axios');
@@ -671,6 +671,7 @@ app.post('/api/process-video', upload.single('video'), async (req, res) => {
         const videoPath = req.file.path;
         const language = req.body.SelectedLang;
         const isoneWord = req.body.WordLimit === 'true';
+        const wordLayout = req.body.WordLayout;
         console.log(isoneWord, "from front");
         let remaningmins = 0;
         const outputPath = `${videoPath}_output.mp4`;
@@ -710,11 +711,17 @@ app.post('/api/process-video', upload.single('video'), async (req, res) => {
         fs.writeFileSync(srtFilePath, outputSrt);
 
 
-
+        const random = processShuffledText(wordLayout, videoPath, srtFilePath, outputPath);
+        console.log(random, "Scripttttt")
 
         // Upload video and SRT to azure
 
-        const videoUpload = await uploadToAzure(videoPath);
+        let videoUpload;
+        if (wordLayout == 'Shuffled text') {
+            videoUpload = await uploadToAzure(outputPath);
+        } else {
+            videoUpload = await uploadToAzure(videoPath);
+        }
         const srtUpload = await uploadToAzure(srtFilePath);
         console.log(videoUpload, srtUpload)
 
@@ -1939,9 +1946,9 @@ const VideoEmojiprocessing = async (assFilePath, videoPath, watermarkPath, resWi
         const emojiInputs = [];
         let overlayIndex = 0;
 
-       
+
         for (const subtitle of subtitles) {
-           
+
             const validEmojis = subtitle.emojis.filter(emoji => {
                 const emojiPng = emojiMapping[emoji] ? path.join(__dirname, emojiMapping[emoji]) : null;
                 return emojiPng && fs.existsSync(emojiPng);
@@ -1969,7 +1976,7 @@ const VideoEmojiprocessing = async (assFilePath, videoPath, watermarkPath, resWi
             }
         }
 
-       
+
         let filterComplex = `[0:v]scale=${resWidth}:${resHeight}[tmp0];`;
 
         if (overlayCommands.length > 0) {
@@ -2019,6 +2026,17 @@ const VideoEmojiprocessing = async (assFilePath, videoPath, watermarkPath, resWi
 };
 
 
+function processShuffledText(wordLayout, videoPath, srtFilePath, outputPath) {
+    if (wordLayout === "Shuffled text") {
+        console.log("IN SHUFFLE");
+
+        const command = `/home/saksham/virtual/venv/bin/python3 /home/saksham/virtual/script2.py ${`/home/saksham/Caps/aws-deploy/whisper-backend/${videoPath}`} ${srtFilePath} ${`/home/saksham/Caps/aws-deploy/whisper-backend/${outputPath}`}`;
+
+        execSync(command)
+
+        return 1;
+    }
+}
 
 
 function generateOrderId() {
