@@ -674,7 +674,7 @@ app.post('/api/process-video', upload.single('video'), async (req, res) => {
         const wordLayout = req.body.WordLayout;
         console.log(isoneWord, "from front");
         let remaningmins = 0;
-        const outputPath = `${videoPath}_output.mp4`;
+        const outputPath = `${videoPath}_random.mp4`;
         const watermarkPath = path.join(__dirname, 'watermarks', 'watermark.svg');
 
         const transcription = await transcribeVideo(videoPath, isoneWord);
