@@ -711,7 +711,7 @@ app.post('/api/process-video', upload.single('video'), async (req, res) => {
         fs.writeFileSync(srtFilePath, outputSrt);
 
 
-        const random = processShuffledText(wordLayout, videoPath, srtFilePath, outputPath);
+        const random = processShuffledText(wordLayout, videoPath, srtFilePath, outputPath, isoneWord);
         console.log(random, "Scripttttt")
 
         // Upload video and SRT to azure
@@ -728,6 +728,9 @@ app.post('/api/process-video', upload.single('video'), async (req, res) => {
 
         fs.unlinkSync(videoPath);
         fs.unlinkSync(srtFilePath);
+        if (wordLayout == 'Shuffled text') {
+            fs.unlinkSync(outputPath);
+        }
 
 
         res.json({
@@ -2026,12 +2029,15 @@ const VideoEmojiprocessing = async (assFilePath, videoPath, watermarkPath, resWi
 };
 
 
-function processShuffledText(wordLayout, videoPath, srtFilePath, outputPath) {
+function processShuffledText(wordLayout, videoPath, srtFilePath, outputPath, isoneWord) {
     if (wordLayout === "Shuffled text") {
         console.log("IN SHUFFLE");
-
-        const command = `/home/saksham/virtual/venv/bin/python3 /home/saksham/virtual/script2.py ${`/home/saksham/Caps/aws-deploy/whisper-backend/${videoPath}`} ${srtFilePath} ${`/home/saksham/Caps/aws-deploy/whisper-backend/${outputPath}`}`;
-
+        let command;
+        if (isoneWord) {
+            command = `/home/saksham/virtual/venv/bin/python3 /home/saksham/virtual/script2.py ${`/home/saksham/Caps/aws-deploy/whisper-backend/${videoPath}`} ${srtFilePath} ${`/home/saksham/Caps/aws-deploy/whisper-backend/${outputPath}`}`;
+        } else {
+            command = `/home/saksham/virtual/venv/bin/python3 /home/saksham/virtual/script3.py ${`/home/saksham/Caps/aws-deploy/whisper-backend/${videoPath}`} ${srtFilePath} ${`/home/saksham/Caps/aws-deploy/whisper-backend/${outputPath}`}`;
+        }
         execSync(command)
 
         return 1;
