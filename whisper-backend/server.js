@@ -6,6 +6,7 @@ const ffmpeg = require('fluent-ffmpeg')
 const path = require('path');
 const axios = require('axios');
 const cors = require('cors');
+const FormData = require('form-data');
 const { transliterate } = require('transliteration');
 const Sanscript = require("@indic-transliteration/sanscript")
 const slug = require('slug');
@@ -664,32 +665,34 @@ const emojiMapping = {
     "🙃": "ALLEMOJIS/Smileys/UpsideDownFace.png"
 }
 
+const AZURE_OPENAI_API_KEY = '';
+
 
 app.post('/api/process-video', upload.single('video'), async (req, res) => {
     try {
-        console.log(req)
-        const videoPath = req.file.path;
+        const videoFilePath = req.file.path;
         const language = req.body.SelectedLang;
         const isoneWord = req.body.WordLimit === 'true';
         const wordLayout = req.body.WordLayout;
         console.log(isoneWord, "from front");
         let remaningmins = 0;
-        const outputPath = `${videoPath}_random.mp4`;
+        const outputPath = `${videoFilePath}_random.mp4`;
         const watermarkPath = path.join(__dirname, 'watermarks', 'watermark.svg');
 
-        const transcription = await transcribeVideo(videoPath, isoneWord);
+        // const transcription = await transcribeVideo(videoPath, isoneWord);
+        const transcription = await processVideoInput(videoFilePath);
         console.log(transcription, "process wali")
 
         let srtContent
 
         if (isoneWord) {
-            srtContent = generateSRTSimple(transcription.words)
+            srtContent = generateSRTOneWord(transcription.segments);
         } else {
             console.log("Ran");
-            srtContent = processTranscriptionToSRT(transcription.segments, 4);
+            srtContent = generateSRTNormal(transcription.segments, 4);
         }
 
-        console.log(srtContent)
+        console.log(srtContent);
         let outputSrt;
 
 
@@ -702,7 +705,8 @@ app.post('/api/process-video', upload.single('video'), async (req, res) => {
         } else if (supportedLanguages.includes(language)) {
             outputSrt = srtContent;
         } else {
-            outputSrt = await convertHindiToHinglish(srtContent, language);
+            console.log('Called');
+            outputSrt = await callGPT4(language, srtContent);
         }
 
 
@@ -711,7 +715,7 @@ app.post('/api/process-video', upload.single('video'), async (req, res) => {
         fs.writeFileSync(srtFilePath, outputSrt);
 
 
-        const random = processShuffledText(wordLayout, videoPath, srtFilePath, outputPath, isoneWord);
+        const random = processShuffledText(wordLayout, videoFilePath, srtFilePath, outputPath, isoneWord);
         console.log(random, "Scripttttt")
 
         // Upload video and SRT to azure
@@ -720,13 +724,13 @@ app.post('/api/process-video', upload.single('video'), async (req, res) => {
         if (wordLayout == 'Shuffled text') {
             videoUpload = await uploadToAzure(outputPath);
         } else {
-            videoUpload = await uploadToAzure(videoPath);
+            videoUpload = await uploadToAzure(videoFilePath);
         }
         const srtUpload = await uploadToAzure(srtFilePath);
         console.log(videoUpload, srtUpload)
 
 
-        fs.unlinkSync(videoPath);
+        fs.unlinkSync(videoFilePath);
         fs.unlinkSync(srtFilePath);
         if (wordLayout == 'Shuffled text') {
             fs.unlinkSync(outputPath);
@@ -1611,6 +1615,169 @@ async function transcribeVideo(videoPath, isoneWord) {
         throw error;
     }
 }
+
+function extractAudioFromVideo(videoFilePath, audioFilePath) {
+    return new Promise((resolve, reject) => {
+
+        const command = `ffmpeg -i "${videoFilePath}" -vn -acodec pcm_s16le -ar 16000 -ac 1 "${audioFilePath}"`;
+        exec(command, (error, stdout, stderr) => {
+            if (error) {
+                console.error('Error extracting audio:', stderr);
+                reject(error);
+            } else {
+                console.log('Audio extracted successfully:', audioFilePath);
+                resolve(audioFilePath);
+            }
+        });
+    });
+}
+
+
+async function callWhisper(audioFilePath) {
+    console.log(audioFilePath);
+    const url = `https://capsaiendpoint.openai.azure.com/openai/deployments/whisper/audio/translations?api-version=2024-06-01`;
+
+    const formData = new FormData();
+    formData.append('file', fs.createReadStream(audioFilePath), { filename: 'audio.wav' }); // Pass the audio file
+    formData.append('response_format', 'verbose_json'); // Request SRT format
+    formData.append('word_timestamps', 'true'); // Request per-word timestamps
+
+    const headers = {
+        ...formData.getHeaders(),
+        'api-key': AZURE_OPENAI_API_KEY,
+    };
+
+    try {
+        const response = await axios.post(url, formData, { headers });
+        return response.data;
+    } catch (error) {
+        console.error('Error calling Whisper:', error.response ? error.response.data : error.message);
+        throw error;
+    }
+}
+
+async function processVideoInput(videoFilePath) {
+    console.log('IN Code')
+    try {
+        // Step 1: Extract audio from video using system ffmpeg
+        console.log('Extracting audio from video...');
+        const audioFilePath = 'uploads/extracted-audio.wav';
+        await extractAudioFromVideo(videoFilePath, audioFilePath);
+
+        // Step 2: Send audio to Whisper API and request SRT format
+        console.log('Sending audio to Whisper API...');
+        const srtContent = await callWhisper(audioFilePath);
+        console.log('Whisper Transcription (SRT):\n', srtContent);
+
+        // Clean up: Delete the extracted audio file
+        fs.unlinkSync(audioFilePath);
+        console.log('Temporary audio file deleted.');
+
+        return srtContent;
+    } catch (error) {
+        console.error('Error processing video input:', error);
+        throw error;
+    }
+}
+
+
+function generateSRTOneWord(segments) {
+    let srt = '';
+    let counter = 1;
+
+    segments.forEach(segment => {
+        const segmentDuration = segment.end - segment.start;
+        const words = segment.text.split(/\s+/);
+        const wordDuration = segmentDuration / words.length;
+        let currentTime = segment.start;
+
+        words.forEach(word => {
+            srt += `${counter}\n`;
+            srt += `${formatTime(currentTime)} --> ${formatTime(currentTime + wordDuration)}\n`;
+            srt += `${word}\n\n`;
+            counter++;
+            currentTime += wordDuration;
+        });
+    });
+
+    return srt;
+}
+
+function generateSRTNormal(segments, wordLimit) {
+    let srt = '';
+    let index = 1;
+
+    segments.forEach((segment) => {
+        const words = segment.text.split(' ');
+        const totalWords = words.length;
+        const segmentDuration = segment.end - segment.start;
+
+        for (let i = 0; i < totalWords; i += wordLimit) {
+            const chunk = words.slice(i, i + wordLimit).join(' ');
+
+
+            const wordStartTime = segment.start + (i / totalWords) * segmentDuration;
+            const wordEndTime = segment.start + ((i + wordLimit) / totalWords) * segmentDuration;
+
+
+            const startTime = secondsToSRTTime(wordStartTime);
+            const endTime = secondsToSRTTime(Math.min(wordEndTime, segment.end));
+
+
+            srt += `${index}\n${startTime} --> ${endTime}\n${chunk}\n\n`;
+            index++;
+        }
+    });
+
+    return srt;
+}
+
+
+function formatTime(seconds) {
+    const date = new Date(0);
+    date.setSeconds(Math.floor(seconds));
+    date.setMilliseconds((seconds % 1) * 1000);
+    return date.toISOString().substring(11, 23).replace('.', ',');
+}
+
+
+
+
+
+async function callGPT4(language, changetext) {
+    console.log(changetext);
+    let prompt;
+
+    if (language === 'Hindi') {
+        prompt = `Convert the following text to Hindi in pure Devanagari alphabets in SRT format. Provide only the translation in plain SRT format without any code block or additional formatting:\n\n${changetext}`;
+    } else if (language === 'English') {
+        prompt = `Convert the following text to English in SRT format. Provide only the translation in plain SRT format without any code block or additional formatting:\n\n${changetext}`;
+    } else {
+        prompt = `Convert the following Hindi text to Hinglish in SRT format. Provide only the translation in plain SRT format without any code block or additional formatting:\n\n${changetext}`;
+    }
+
+    const url = `https://capsaiendpoint.openai.azure.com/openai/deployments/gpt-4o-mini/chat/completions?api-version=2024-08-01-preview`;
+
+    const data = {
+        messages: [
+            { role: 'user', content: prompt }
+        ],
+    };
+
+    const headers = {
+        'Content-Type': 'application/json',
+        'api-key': AZURE_OPENAI_API_KEY,
+    };
+
+    try {
+        const response = await axios.post(url, data, { headers });
+        return response.data.choices[0].message.content;
+    } catch (error) {
+        console.error('Error calling GPT-4:', error.response ? error.response.data : error.message);
+        throw error;
+    }
+}
+
 
 async function convertHindiToHinglish(changetext, language) {
     let prompt;
