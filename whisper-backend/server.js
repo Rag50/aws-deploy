@@ -1659,17 +1659,17 @@ async function callWhisper(audioFilePath) {
 async function processVideoInput(videoFilePath) {
     console.log('IN Code')
     try {
-        // Step 1: Extract audio from video using system ffmpeg
+      
         console.log('Extracting audio from video...');
         const audioFilePath = 'uploads/extracted-audio.wav';
         await extractAudioFromVideo(videoFilePath, audioFilePath);
 
-        // Step 2: Send audio to Whisper API and request SRT format
+       
         console.log('Sending audio to Whisper API...');
         const srtContent = await callWhisper(audioFilePath);
         console.log('Whisper Transcription (SRT):\n', srtContent);
 
-        // Clean up: Delete the extracted audio file
+      
         fs.unlinkSync(audioFilePath);
         console.log('Temporary audio file deleted.');
 
