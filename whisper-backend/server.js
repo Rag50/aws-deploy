@@ -1779,33 +1779,6 @@ async function callGPT4(language, changetext) {
 }
 
 
-async function convertHindiToHinglish(changetext, language) {
-    let prompt;
-    if (language == 'Hindi') {
-        prompt = `Convert the following text to hindi in pure devnagri alphabets  in SRT format.Provide only the translation in plain SRT format without any code block or additional formatting:\n\n${changetext}`
-    }
-    else if (language == 'English') {
-        prompt = `Convert the following text to english in SRT format.Provide only the translation in plain SRT format without any code block or additional formatting:\n\n${changetext}`
-    } else {
-        prompt = `Convert the following Hindi text to Hinglish in SRT format. Provide only the translation in plain SRT format without any code block or additional formatting:\n\n${changetext}`
-    }
-    try {
-        const completion = await openai.chat.completions.create({
-            messages: [
-                { role: "system", content: "You are a helpful assistant." },
-                { role: "user", content: prompt },
-            ],
-            model: "gpt-4o-mini-2024-07-18",
-        });
-
-        const hinglishText = completion.choices[0].message.content;
-        return hinglishText;
-    } catch (error) {
-        console.error("Error translating text:", error);
-    }
-}
-
-
 const convertColorToAss = (color) => {
     if (!color) return '&H00FFFFFF'; // Default to white if color is undefined
 
@@ -1969,34 +1942,6 @@ Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
     return assHeader + assEvents;
 };
 
-function processTranscriptionToSRT(segments, wordLimit) {
-    let srt = '';
-    let index = 1;
-
-    segments.forEach((segment) => {
-        const words = segment.text.split(' ');
-        const totalWords = words.length;
-        const segmentDuration = segment.end - segment.start;
-
-        for (let i = 0; i < totalWords; i += wordLimit) {
-            const chunk = words.slice(i, i + wordLimit).join(' ');
-
-
-            const wordStartTime = segment.start + (i / totalWords) * segmentDuration;
-            const wordEndTime = segment.start + ((i + wordLimit) / totalWords) * segmentDuration;
-
-
-            const startTime = secondsToSRTTime(wordStartTime);
-            const endTime = secondsToSRTTime(Math.min(wordEndTime, segment.end));
-
-
-            srt += `${index}\n${startTime} --> ${endTime}\n${chunk}\n\n`;
-            index++;
-        }
-    });
-
-    return srt;
-}
 
 function secondsToSRTTime(seconds) {
     const date = new Date(0);
@@ -2028,29 +1973,7 @@ const secondsToTime = (seconds) => {
     return `${hours}:${minutes}:${secs}`;
 };
 
-function generateSRTSimple(words) {
-    let srt = '';
-    words.forEach((el, index) => {
-        const startTime = timestampToSRTFormat(el.start);
-        const endTime = timestampToSRTFormat(el.end);
 
-        srt += `${index + 1}\n`;
-        srt += `${startTime} --> ${endTime}\n`;
-        srt += `${el.word}\n\n`;
-    });
-    return srt;
-}
-
-
-
-function timestampToSRTFormat(timestamp) {
-    const date = new Date(timestamp * 1000);
-    const hours = date.getUTCHours().toString().padStart(2, '0');
-    const minutes = date.getUTCMinutes().toString().padStart(2, '0');
-    const seconds = date.getUTCSeconds().toString().padStart(2, '0');
-    const milliseconds = (date.getUTCMilliseconds() / 1000).toFixed(3).slice(2, 5);
-    return `${hours}:${minutes}:${seconds},${milliseconds}`;
-}
 
 async function getVideoDuration(filePath) {
     return new Promise((resolve, reject) => {
