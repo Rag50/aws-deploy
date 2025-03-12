@@ -686,6 +686,7 @@ app.post('/api/process-video', upload.single('video'), async (req, res) => {
         let srtContent
 
         if (isoneWord) {
+            // one word error (maybe  in frontend )
             srtContent = generateSRTOneWord(transcription.segments);
         } else {
             console.log("Ran");
