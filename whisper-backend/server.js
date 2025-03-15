@@ -1664,6 +1664,7 @@ async function processVideoInput(videoFilePath) {
         console.log('Extracting audio from video...');
         const audioFilePath = 'uploads/extracted-audio.wav';
         await extractAudioFromVideo(videoFilePath, audioFilePath);
+        // one word stucking after audio extraction 
 
        
         console.log('Sending audio to Whisper API...');
