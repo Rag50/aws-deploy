@@ -681,19 +681,16 @@ app.post('/api/process-video', upload.single('video'), async (req, res) => {
 
         // const transcription = await transcribeVideo(videoPath, isoneWord);
         const transcription = await processVideoInput(videoFilePath);
-        console.log(transcription, "process wali")
+        console.log(transcription.segments, "process wali")
 
         let srtContent
 
-        if (isoneWord) {
-            // one word error (maybe  in frontend )
-            srtContent = generateSRTOneWord(transcription.segments);
-        } else {
-            console.log("Ran");
-            srtContent = generateSRTNormal(transcription.segments, 4);
-        }
 
-        console.log(srtContent);
+        console.log("Ran");
+        srtContent = generateSRTNormal(transcription.segments, 1);
+
+
+        // console.log(srtContent);
         let outputSrt;
 
 
@@ -731,7 +728,7 @@ app.post('/api/process-video', upload.single('video'), async (req, res) => {
         console.log(videoUpload, srtUpload)
 
 
-        fs.unlinkSync(videoFilePath);
+        // fs.unlinkSync(videoFilePath);
         fs.unlinkSync(srtFilePath);
         if (wordLayout == 'Shuffled text') {
             fs.unlinkSync(outputPath);
@@ -1641,7 +1638,6 @@ async function callWhisper(audioFilePath) {
     const formData = new FormData();
     formData.append('file', fs.createReadStream(audioFilePath), { filename: 'audio.wav' }); // Pass the audio file
     formData.append('response_format', 'verbose_json'); // Request SRT format
-    formData.append('word_timestamps', 'true'); // Request per-word timestamps
 
     const headers = {
         ...formData.getHeaders(),
@@ -1660,18 +1656,18 @@ async function callWhisper(audioFilePath) {
 async function processVideoInput(videoFilePath) {
     console.log('IN Code')
     try {
-      
+
         console.log('Extracting audio from video...');
         const audioFilePath = 'uploads/extracted-audio.wav';
         await extractAudioFromVideo(videoFilePath, audioFilePath);
         // one word stucking after audio extraction 
 
-       
+
         console.log('Sending audio to Whisper API...');
         const srtContent = await callWhisper(audioFilePath);
         console.log('Whisper Transcription (SRT):\n', srtContent);
 
-      
+
         fs.unlinkSync(audioFilePath);
         console.log('Temporary audio file deleted.');
 
@@ -1709,22 +1705,34 @@ function generateSRTNormal(segments, wordLimit) {
     let srt = '';
     let index = 1;
 
-    segments.forEach((segment) => {
-        const words = segment.text.split(' ');
+    // Ensure segments is an array, default to empty array if null/undefined
+    const validSegments = Array.isArray(segments) ? segments : [];
+
+    validSegments.forEach((segment) => {
+        // Skip segment if text is missing or not a string
+        if (typeof segment.text !== 'string') {
+            return;
+        }
+
+        const words = segment.text.split(' ').filter(word => word.trim() !== ''); // Remove empty words
         const totalWords = words.length;
         const segmentDuration = segment.end - segment.start;
 
+        // Skip if no words or invalid timing
+        if (totalWords === 0 || isNaN(segmentDuration) || segmentDuration <= 0) {
+            return;
+        }
+
         for (let i = 0; i < totalWords; i += wordLimit) {
             const chunk = words.slice(i, i + wordLimit).join(' ');
+            if (!chunk) continue; // Skip empty chunks
 
-
+            const chunkDuration = segmentDuration * (Math.min(wordLimit, totalWords - i) / totalWords);
             const wordStartTime = segment.start + (i / totalWords) * segmentDuration;
-            const wordEndTime = segment.start + ((i + wordLimit) / totalWords) * segmentDuration;
-
+            const wordEndTime = wordStartTime + chunkDuration;
 
             const startTime = secondsToSRTTime(wordStartTime);
             const endTime = secondsToSRTTime(Math.min(wordEndTime, segment.end));
-
 
             srt += `${index}\n${startTime} --> ${endTime}\n${chunk}\n\n`;
             index++;
