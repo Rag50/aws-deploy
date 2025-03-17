@@ -687,7 +687,12 @@ app.post('/api/process-video', upload.single('video'), async (req, res) => {
 
 
         console.log("Ran");
-        srtContent = generateSRTNormal(transcription.segments, 1);
+        if (isoneWord) {
+            srtContent = generateSRTNormal(transcription.segments, 1);
+        } else {
+            srtContent = generateSRTNormal(transcription.segments, 4);
+        }
+
 
 
         // console.log(srtContent);
@@ -1705,42 +1710,58 @@ function generateSRTNormal(segments, wordLimit) {
     let srt = '';
     let index = 1;
 
-    // Ensure segments is an array, default to empty array if null/undefined
     const validSegments = Array.isArray(segments) ? segments : [];
 
     validSegments.forEach((segment) => {
-        // Skip segment if text is missing or not a string
-        if (typeof segment.text !== 'string') {
+        if (
+            !segment?.text ||
+            typeof segment.start === 'undefined' ||
+            typeof segment.end === 'undefined'
+        ) {
             return;
         }
 
-        const words = segment.text.split(' ').filter(word => word.trim() !== ''); // Remove empty words
+
+        const words = segment.text.split(' ').filter((word) => word.trim() !== '');
         const totalWords = words.length;
         const segmentDuration = segment.end - segment.start;
 
-        // Skip if no words or invalid timing
-        if (totalWords === 0 || isNaN(segmentDuration) || segmentDuration <= 0) {
-            return;
-        }
+        if (totalWords === 0 || segmentDuration <= 0) return;
 
-        for (let i = 0; i < totalWords; i += wordLimit) {
-            const chunk = words.slice(i, i + wordLimit).join(' ');
-            if (!chunk) continue; // Skip empty chunks
+        // Handle 1-word-per-subtitle explicitly
+        if (wordLimit === 1) {
+            // Calculate time per character to approximate word timings
+            const totalChars = segment.text.replace(/\s+/g, '').length;
+            let currentTime = segment.start;
 
-            const chunkDuration = segmentDuration * (Math.min(wordLimit, totalWords - i) / totalWords);
-            const wordStartTime = segment.start + (i / totalWords) * segmentDuration;
-            const wordEndTime = wordStartTime + chunkDuration;
+            words.forEach((word) => {
+                const wordCharCount = word.replace(/\s+/g, '').length;
+                const wordDuration = (wordCharCount / totalChars) * segmentDuration;
 
-            const startTime = secondsToSRTTime(wordStartTime);
-            const endTime = secondsToSRTTime(Math.min(wordEndTime, segment.end));
+                const startTime = secondsToSRTTime(currentTime);
+                const endTime = secondsToSRTTime(currentTime + wordDuration);
 
-            srt += `${index}\n${startTime} --> ${endTime}\n${chunk}\n\n`;
-            index++;
+                srt += `${index}\n${startTime} --> ${endTime}\n${word}\n\n`;
+                index++;
+                currentTime += wordDuration;
+            });
+        } else {
+            // Existing logic for multi-word subtitles
+            for (let i = 0; i < totalWords; i += wordLimit) {
+                const chunk = words.slice(i, i + wordLimit).join(' ');
+                const chunkStart = segment.start + (i / totalWords) * segmentDuration;
+                const chunkEnd = segment.start + ((i + wordLimit) / totalWords) * segmentDuration;
+
+                srt += `${index}\n${secondsToSRTTime(chunkStart)} --> ${secondsToSRTTime(chunkEnd)}\n${chunk}\n\n`;
+                index++;
+            }
         }
     });
 
     return srt;
 }
+
+
 
 
 function formatTime(seconds) {
