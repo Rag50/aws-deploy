@@ -1043,6 +1043,8 @@ app.post("/api/verify", async (req, res) => {
     }
 });
 
+
+// move  to azure one new function 
 async function addEmojisToTranscription(transcriptionArray) {
     // Create a single prompt that includes all transcriptions
     const combinedPrompt = `Suggest appropriate emojis for the following texts. Only return emojis in the same order:
