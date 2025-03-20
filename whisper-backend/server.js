@@ -1045,21 +1045,71 @@ app.post("/api/verify", async (req, res) => {
 
 
 // move  to azure one new function 
+// async function addEmojisToTranscription(transcriptionArray) {
+//     // Create a single prompt that includes all transcriptions
+//     const combinedPrompt = `Suggest appropriate emojis for the following texts. Only return emojis in the same order:
+// ${transcriptionArray.map((t, index) => `${index + 1}. "${t.value}"`).join('\n')}`;
+
+//     try {
+//         const response = await openai.chat.completions.create({
+//             messages: [{ role: 'user', content: combinedPrompt }],
+//             model: "gpt-4o-mini-2024-07-18",
+//         });
+
+//         // Check if we have a valid response structure
+//         if (response?.choices?.[0]?.message?.content) {
+//             // Split the response into individual emojis
+//             const emojis = response.choices[0].message.content
+//                 .trim()
+//                 .split('\n')
+//                 .map(line => line.replace(/^\d+\.\s*/, '').replace(/".*?"/, '').trim())
+//                 .filter(emoji => emoji); // Remove any empty lines
+
+//             // Map the original transcriptions with their corresponding emojis
+//             return transcriptionArray.map((transcription, index) => ({
+//                 ...transcription,
+//                 value: `${transcription.value} ${emojis[index] || ''}` // Include index and emoji
+//             }));
+//         } else {
+//             console.error('Unexpected response structure:', response);
+//             return transcriptionArray.map(transcription => ({
+//                 ...transcription,
+//                 value: transcription.value // Return original without emoji
+//             }));
+//         }
+//     } catch (error) {
+//         console.error('Error processing transcriptions:', error.message);
+//         return transcriptionArray.map(transcription => ({
+//             ...transcription,
+//             value: transcription.value // Return original without emoji
+//         }));
+//     }
+// }
+
 async function addEmojisToTranscription(transcriptionArray) {
     // Create a single prompt that includes all transcriptions
     const combinedPrompt = `Suggest appropriate emojis for the following texts. Only return emojis in the same order:
 ${transcriptionArray.map((t, index) => `${index + 1}. "${t.value}"`).join('\n')}`;
 
     try {
-        const response = await openai.chat.completions.create({
-            messages: [{ role: 'user', content: combinedPrompt }],
-            model: "gpt-4o-mini-2024-07-18",
+        const response = await fetch('https://capsaiendpoint.openai.azure.com/openai/deployments/gpt-4o-mini/chat/completions?api-version=2024-08-01-preview', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                'api-key': AZURE_OPENAI_API_KEY
+            },
+            body: JSON.stringify({
+                messages: [{ role: 'user', content: combinedPrompt }],
+                max_tokens: 60
+            })
         });
 
+        const data = await response.json();
+
         // Check if we have a valid response structure
-        if (response?.choices?.[0]?.message?.content) {
+        if (data?.choices?.[0]?.message?.content) {
             // Split the response into individual emojis
-            const emojis = response.choices[0].message.content
+            const emojis = data.choices[0].message.content
                 .trim()
                 .split('\n')
                 .map(line => line.replace(/^\d+\.\s*/, '').replace(/".*?"/, '').trim())
@@ -1071,7 +1121,7 @@ ${transcriptionArray.map((t, index) => `${index + 1}. "${t.value}"`).join('\n')}
                 value: `${transcription.value} ${emojis[index] || ''}` // Include index and emoji
             }));
         } else {
-            console.error('Unexpected response structure:', response);
+            console.error('Unexpected response structure:', data);
             return transcriptionArray.map(transcription => ({
                 ...transcription,
                 value: transcription.value // Return original without emoji
