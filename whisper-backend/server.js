@@ -753,6 +753,8 @@ app.post('/api/process-video', upload.single('video'), async (req, res) => {
     }
 });
 
+// magic link and other feature pushout 
+
 app.post('/api/change-style', upload.single('video'), async (req, res) => {
     try {
         const { inputVideo, font, color, xPosition, yPosition, srtUrl, Fontsize, userdata, uid, save, keyS3, transcriptions, isOneword, videoResolution, soundEffects } = req.body;
