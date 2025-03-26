@@ -1720,6 +1720,7 @@ function generateSRTOneWord(segments) {
     return srt;
 }
 
+// srt one word breaking logic change 
 function generateSRTNormal(segments, wordLimit) {
     let srt = '';
     let index = 1;
