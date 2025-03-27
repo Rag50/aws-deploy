@@ -1720,7 +1720,6 @@ function generateSRTOneWord(segments) {
     return srt;
 }
 
-// srt one word breaking logic change 
 function generateSRTNormal(segments, wordLimit) {
     let srt = '';
     let index = 1;
@@ -1736,29 +1735,22 @@ function generateSRTNormal(segments, wordLimit) {
             return;
         }
 
-
-        const words = segment.text.split(' ').filter((word) => word.trim() !== '');
+        const words = segment.text.split(' ').filter(word => word.trim() !== '');
         const totalWords = words.length;
         const segmentDuration = segment.end - segment.start;
 
         if (totalWords === 0 || segmentDuration <= 0) return;
 
-        // Handle 1-word-per-subtitle explicitly
         if (wordLimit === 1) {
-            // Calculate time per character to approximate word timings
-            const totalChars = segment.text.replace(/\s+/g, '').length;
-            let currentTime = segment.start;
-
-            words.forEach((word) => {
-                const wordCharCount = word.replace(/\s+/g, '').length;
-                const wordDuration = (wordCharCount / totalChars) * segmentDuration;
-
-                const startTime = secondsToSRTTime(currentTime);
-                const endTime = secondsToSRTTime(currentTime + wordDuration);
-
-                srt += `${index}\n${startTime} --> ${endTime}\n${word}\n\n`;
+            // Equal time distribution for each word
+            const wordDuration = segmentDuration / totalWords;
+            
+            words.forEach((word, i) => {
+                const startTime = segment.start + (i * wordDuration);
+                const endTime = segment.start + ((i + 1) * wordDuration);
+                
+                srt += `${index}\n${secondsToSRTTime(startTime)} --> ${secondsToSRTTime(endTime)}\n${word}\n\n`;
                 index++;
-                currentTime += wordDuration;
             });
         } else {
             // Existing logic for multi-word subtitles
