@@ -820,6 +820,7 @@ app.post('/api/change-style', upload.single('video'), async (req, res) => {
         // animations in multiowrd 
 
         // Correctly structure the ffmpeg command to handle all scenarios
+        // watermark removed for some time 
         await new Promise((resolve, reject) => {
             if (userdata.usertype === 'free') {
                 if (videoResolution === '16:9') {
