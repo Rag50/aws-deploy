@@ -679,8 +679,7 @@ app.post('/api/process-video', upload.single('video'), async (req, res) => {
         const outputPath = `${videoFilePath}_random.mp4`;
         const watermarkPath = path.join(__dirname, 'watermarks', 'watermark.svg');
 
-        // const transcription = await transcribeVideo(videoPath, isoneWord);
-        const transcription = await processVideoInput(videoFilePath);
+        const transcription = await processVideoInput(videoFilePath, isoneWord);
         console.log(transcription.segments, "process wali")
 
         let srtContent
@@ -688,7 +687,7 @@ app.post('/api/process-video', upload.single('video'), async (req, res) => {
 
         console.log("Ran");
         if (isoneWord) {
-            srtContent = generateSRTNormal(transcription.segments, 1);
+            srtContent = generateSRTFromWords(transcription.words);
         } else {
             srtContent = generateSRTNormal(transcription.segments, 4);
         }
@@ -817,34 +816,28 @@ app.post('/api/change-style', upload.single('video'), async (req, res) => {
         const outputFilePath = path.join(__dirname, 'uploads', path.basename(videoPath).replace('.mp4', '_output.mp4'));
 
 
-        // animations in multiowrd 
 
-        // Correctly structure the ffmpeg command to handle all scenarios
-        // watermark removed for some time 
         await new Promise((resolve, reject) => {
             if (userdata.usertype === 'free') {
                 if (videoResolution === '16:9') {
                     ffmpegCommand = `ffmpeg ${inputs.map(input => `-i "${input}"`).join(' ')} ${soundEffectInputs} -filter_complex "` +
-                        `[${watermarkStreamIndex}:v]scale=150:70[watermark]; ` +
                         `${soundEffectFilters ? `${soundEffectFilters};` : ''} ` +
                         `${audioMixFilters ? `${audioMixFilters};` : ''} ` +
                         `[${videoStreamIndex}:v]scale=${resWidth}:${resheight}:force_original_aspect_ratio=decrease,pad=${resWidth}:${resheight}:(ow-iw)/2:(oh-ih)/2,setdar=16/9[scaled]; ` +
-                        `[scaled][watermark]overlay=1700:190,subtitles="${tempassFile}":force_style='Alignment=2'[outv]" ` +
+                        `[scaled]subtitles="${tempassFile}":force_style='Alignment=2'[outv]" ` +
                         `-map "[outv]" -map "[audioMix]" -c:v libx264 -c:a aac "${outputFilePath}"`;
                 } else if (videoResolution === '1:1') {
                     ffmpegCommand = `ffmpeg ${inputs.map(input => `-i "${input}"`).join(' ')} ${soundEffectInputs} -filter_complex "` +
-                        `[${watermarkStreamIndex}:v]scale=150:70[watermark]; ` +
                         `${soundEffectFilters ? `${soundEffectFilters};` : ''} ` +
                         `${audioMixFilters ? `${audioMixFilters};` : ''} ` +
                         `[${videoStreamIndex}:v]scale=${resWidth}:${resheight}:force_original_aspect_ratio=decrease,pad=${resWidth}:${resheight}:(ow-iw)/2:(oh-ih)/2,setdar=1/1[scaled]; ` +
-                        `[scaled][watermark]overlay=860:158,subtitles="${tempassFile}":force_style='Alignment=2'[outv]" ` +
+                        `[scaled]subtitles="${tempassFile}":force_style='Alignment=2'[outv]" ` +
                         `-map "[outv]" -map "[audioMix]" -c:v libx264 -c:a aac "${outputFilePath}"`;
                 } else {
                     ffmpegCommand = `ffmpeg ${inputs.map(input => `-i "${input}"`).join(' ')} ${soundEffectInputs} -filter_complex "` +
-                        `[${watermarkStreamIndex}:v]scale=203.2:94.832[watermark]; ` +
                         `${soundEffectFilters ? `${soundEffectFilters};` : ''} ` +
                         `${audioMixFilters ? `${audioMixFilters};` : ''} ` +
-                        `[${videoStreamIndex}:v][watermark]overlay=494:190,subtitles="${tempassFile}":force_style='Alignment=2'[outv]" ` +
+                        `[${videoStreamIndex}:v]subtitles="${tempassFile}":force_style='Alignment=2'[outv]" ` +
                         `-map "[outv]" -map "[audioMix]" -c:v libx264 -c:a aac "${outputFilePath}"`;
                 }
             } else {
@@ -1650,14 +1643,17 @@ function extractAudioFromVideo(videoFilePath, audioFilePath) {
     });
 }
 
-
-async function callWhisper(audioFilePath) {
+async function callWhisper(audioFilePath, isoneWord) {
     console.log(audioFilePath);
-    const url = `https://capsaiendpoint.openai.azure.com/openai/deployments/whisper/audio/translations?api-version=2024-06-01`;
+    const url = `https://capsaiendpoint.openai.azure.com/openai/deployments/whisper/audio/transcriptions?api-version=2024-02-15-preview`; // Changed to transcriptions and updated API version
 
     const formData = new FormData();
-    formData.append('file', fs.createReadStream(audioFilePath), { filename: 'audio.wav' }); // Pass the audio file
-    formData.append('response_format', 'verbose_json'); // Request SRT format
+    formData.append('file', fs.createReadStream(audioFilePath), { filename: 'audio.wav' });
+    formData.append('response_format', 'verbose_json');
+
+    if (isoneWord) {
+        formData.append('timestamp_granularities[]', 'word');
+    }
 
     const headers = {
         ...formData.getHeaders(),
@@ -1666,6 +1662,16 @@ async function callWhisper(audioFilePath) {
 
     try {
         const response = await axios.post(url, formData, { headers });
+
+        // Process word-level timestamps
+        if (response.data.words) {
+            response.data.words.forEach(word => {
+                console.log(`Word: ${word.word} | Start: ${word.start} | End: ${word.end}`);
+            });
+        } else {
+            console.log('No word-level timestamps in response:', response.data);
+        }
+
         return response.data;
     } catch (error) {
         console.error('Error calling Whisper:', error.response ? error.response.data : error.message);
@@ -1673,7 +1679,7 @@ async function callWhisper(audioFilePath) {
     }
 }
 
-async function processVideoInput(videoFilePath) {
+async function processVideoInput(videoFilePath, isoneWord) {
     console.log('IN Code')
     try {
 
@@ -1684,7 +1690,7 @@ async function processVideoInput(videoFilePath) {
 
 
         console.log('Sending audio to Whisper API...');
-        const srtContent = await callWhisper(audioFilePath);
+        const srtContent = await callWhisper(audioFilePath, isoneWord);
         console.log('Whisper Transcription (SRT):\n', srtContent);
 
 
@@ -1698,24 +1704,15 @@ async function processVideoInput(videoFilePath) {
     }
 }
 
-
-function generateSRTOneWord(segments) {
+function generateSRTFromWords(words) {
     let srt = '';
     let counter = 1;
 
-    segments.forEach(segment => {
-        const segmentDuration = segment.end - segment.start;
-        const words = segment.text.split(/\s+/);
-        const wordDuration = segmentDuration / words.length;
-        let currentTime = segment.start;
-
-        words.forEach(word => {
-            srt += `${counter}\n`;
-            srt += `${formatTime(currentTime)} --> ${formatTime(currentTime + wordDuration)}\n`;
-            srt += `${word}\n\n`;
-            counter++;
-            currentTime += wordDuration;
-        });
+    words.forEach(word => {
+        srt += `${counter}\n`;
+        srt += `${formatTime(word.start)} --> ${formatTime(word.end)}\n`;
+        srt += `${word.word}\n\n`;
+        counter++;
     });
 
     return srt;
@@ -1745,11 +1742,11 @@ function generateSRTNormal(segments, wordLimit) {
         if (wordLimit === 1) {
             // Equal time distribution for each word
             const wordDuration = segmentDuration / totalWords;
-            
+
             words.forEach((word, i) => {
                 const startTime = segment.start + (i * wordDuration);
                 const endTime = segment.start + ((i + 1) * wordDuration);
-                
+
                 srt += `${index}\n${secondsToSRTTime(startTime)} --> ${secondsToSRTTime(endTime)}\n${word}\n\n`;
                 index++;
             });
