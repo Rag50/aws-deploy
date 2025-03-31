@@ -1044,11 +1044,13 @@ app.post("/api/verify", async (req, res) => {
 
 
 async function addEmojisToTranscription(transcriptionArray) {
-    // Create a single prompt that includes all transcriptions
-    const combinedPrompt = `Suggest appropriate emojis for the following texts. Only return emojis in the same order:
-${transcriptionArray.map((t, index) => `${index + 1}. "${t.value}"`).join('\n')}`;
-
     try {
+        // Create a optimized prompt for single words
+        const prompt = `For each single word below, suggest ONE MOST RELEVANT EMOJI. 
+Return ONLY EMOJIS in order, one per line, no numbers or explanations.
+Words:
+${transcriptionArray.map(t => t.value).join('\n')}`;
+
         const response = await fetch('https://capsaiendpoint.openai.azure.com/openai/deployments/gpt-4o-mini/chat/completions?api-version=2024-08-01-preview', {
             method: 'POST',
             headers: {
@@ -1056,42 +1058,38 @@ ${transcriptionArray.map((t, index) => `${index + 1}. "${t.value}"`).join('\n')}
                 'api-key': AZURE_OPENAI_API_KEY
             },
             body: JSON.stringify({
-                messages: [{ role: 'user', content: combinedPrompt }]
+                messages: [{
+                    role: 'user',
+                    content: prompt
+                }],
+                temperature: 0.3  // More focused responses
             })
         });
 
         const data = await response.json();
 
-        // Check if we have a valid response structure
-        if (data?.choices?.[0]?.message?.content) {
-            // Split the response into individual emojis
-            const emojis = data.choices[0].message.content
-                .trim()
-                .split('\n')
-                .map(line => line.replace(/^\d+\.\s*/, '').replace(/".*?"/, '').trim())
-                .filter(emoji => emoji); // Remove any empty lines
+        // Improved emoji extraction
+        const emojiResponse = data?.choices?.[0]?.message?.content || '';
+        const emojis = emojiResponse
+            .split('\n')
+            .map(line => {
+                // Extract first emoji from each line
+                const match = line.match(/[\p{Emoji}]/gu);
+                return match ? match[0] : '';
+            })
+            .filter(emoji => emoji);
 
-            // Map the original transcriptions with their corresponding emojis
-            return transcriptionArray.map((transcription, index) => ({
-                ...transcription,
-                value: `${transcription.value} ${emojis[index] || ''}` // Include index and emoji
-            }));
-        } else {
-            console.error('Unexpected response structure:', data);
-            return transcriptionArray.map(transcription => ({
-                ...transcription,
-                value: transcription.value // Return original without emoji
-            }));
-        }
-    } catch (error) {
-        console.error('Error processing transcriptions:', error.message);
-        return transcriptionArray.map(transcription => ({
+        // Map emojis to original words with fallback
+        return transcriptionArray.map((transcription, index) => ({
             ...transcription,
-            value: transcription.value // Return original without emoji
+            value: `${transcription.value} ${emojis[index] || '❔'}` // Fallback emoji
         }));
+
+    } catch (error) {
+        console.error('Error processing transcriptions:', error);
+        return transcriptionArray.map(t => ({ ...t, value: `${t.value} ⚠️` }));
     }
 }
-
 
 
 app.post("/api/send-welcome-email", (req, res) => {
