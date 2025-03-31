@@ -976,7 +976,7 @@ app.post('/api/change-style', upload.single('video'), async (req, res) => {
     }
 });
 
-
+// one word ai emoji sync addition 
 app.post('/api/aiemoji-sync', async (req, res) => {
     try {
         const { transcriptions } = req.body;
