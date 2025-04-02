@@ -890,11 +890,11 @@ app.post('/api/change-style', upload.single('video'), async (req, res) => {
             outputVideoUrl = outputUpload.url;
             // Schedule deletion based on user type
             if (userdata.usertype === 'free') {
-                scheduleFileDeletion('capsuservideos', keyS3, 5)
-                scheduleFileDeletion('capsuservideos', outputUpload.blobName, 2);
+                scheduleFileDeletion('capsuservideos', keyS3, 15)
+                scheduleFileDeletion('capsuservideos', outputUpload.blobName, 15);
             } else {
-                scheduleFileDeletion('capsuservideos', keyS3, 2)
-                scheduleFileDeletion('capsuservideos', outputUpload.blobName, 2);
+                scheduleFileDeletion('capsuservideos', keyS3, 20)
+                scheduleFileDeletion('capsuservideos', outputUpload.blobName, 20);
             }
 
             // Delete the input video
@@ -914,9 +914,9 @@ app.post('/api/change-style', upload.single('video'), async (req, res) => {
             const docId = newDocRef.id;
             const docPath = `users/${uid}/videos`
             if (userdata.usertype === 'free') {
-                scheduleDocumentDeletion(docPath, docId, 2)
+                scheduleDocumentDeletion(docPath, docId, 15)
             } else {
-                scheduleDocumentDeletion(docPath, docId, 3)
+                scheduleDocumentDeletion(docPath, docId, 20)
             }
 
         } else {
@@ -924,9 +924,9 @@ app.post('/api/change-style', upload.single('video'), async (req, res) => {
             outputUpload = await uploadToAzure(outputFilePath);
             outputVideoUrl = outputUpload.url;
 
-            scheduleFileDeletion('capsuservideos', outputUpload.blobName, 1);
+            scheduleFileDeletion('capsuservideos', outputUpload.blobName, 5);
 
-            scheduleFileDeletion('capsuservideos', keyS3, 6)
+            scheduleFileDeletion('capsuservideos', keyS3, 5)
 
 
             // await deleteFromS3(videoPath, 'capsuservideos');
