@@ -1091,7 +1091,7 @@ ${transcriptionArray.map(t => t.value).join('\n')}`;
     }
 }
 
-// changes to be made here 
+// changes to be made here with new mail 
 app.post("/api/send-welcome-email", (req, res) => {
     const { email, userName } = req.body;
 
