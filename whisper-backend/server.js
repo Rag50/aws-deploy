@@ -816,7 +816,7 @@ app.post('/api/change-style', upload.single('video'), async (req, res) => {
         const outputFilePath = path.join(__dirname, 'uploads', path.basename(videoPath).replace('.mp4', '_output.mp4'));
 
 
-
+        // 10 min watermark free video and then 10 mins with watemark
         await new Promise((resolve, reject) => {
             if (userdata.usertype === 'free') {
                 if (videoResolution === '16:9') {
