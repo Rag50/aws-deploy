@@ -1203,105 +1203,23 @@ app.post("/api/send-welcome-email", (req, res) => {
         from: '"Capsai" <ai.editor@capsai.co>',
         to: email,
         subject: 'Welcome to Capsai',
-        html: `
-      <!DOCTYPE html>
-      <html lang="en">
-      <head>
-          <meta charset="UTF-8">
-          <meta name="viewport" content="width=device-width, initial-scale=1.0">
-          <title>Welcome to CapsAI</title>
-          <style>
-              body {
-                  font-family: Arial, sans-serif;
-                  background-color: #f4f4f4;
-                  margin: 0;
-                  padding: 0;
-              }
-              .email-container {
-                  max-width: 600px;
-                  margin: auto;
-                  background-color: #ffffff;
-                  padding: 0;
-                  border-radius: 10px;
-                  box-shadow: 0 0 10px rgba(0, 0, 0, 0.1);
-                  overflow: hidden;
-              }
-              .header {
-                  background-color: #0073e6;
-                  text-align: center;
-                  padding: 20px;
-              }
-              .header img {
-                  width: 150px;
-              }
-              .banner {
-                  width: 100%;
-                  height: auto;
-              }
-              .content {
-                  padding: 20px;
-                  text-align: left;
-                  line-height: 1.6;
-              }
-              .content h1 {
-                  color: #333333;
-              }
-              .content p {
-                  color: #666666;
-              }
-              .features {
-                  display: flex;
-                  justify-content: space-between;
-                  padding: 20px 0;
-              }
-              .feature {
-                  width: 30%;
-                  text-align: center;
-              }
-              .feature img {
-                  width: 100%;
-                  border-radius: 10px;
-              }
-              .footer {
-                  text-align: center;
-                  padding: 10px;
-                  font-size: 12px;
-                  color: #999999;
-              }
-              .footer a {
-                  color: #1e90ff;
-                  text-decoration: none;
-              }
-          </style>
-      </head>
-      <body>
-          <div class="email-container">
-             
-                   <img src="https://capsaistore.blob.core.windows.net/capsaiassets/Welcome_banner.png" alt="Welcome Banner" class="banner">
-            
-            <div class="content">
-                
-                <p>Hi ${userName},</p>
-                <p>We’re thrilled to welcome you to the CapsAI community!</p>
-                <p>CapsAI is designed to make your life easier by automating the subtitle generation process and providing access to a wide range of premium fonts. Whether you're a seasoned creator or just starting out, CapsAI has the tools you need to elevate your content.</p>
-                <p>What You Can Do with CapsAI:</p>
-                <ul>
-                    <li>😊 <strong>Generate subtitles automatically:</strong> Streamline your workflow.</li>
-                    <li>🛠️ <strong>Customize with premium fonts:</strong> Make your videos stand out.</li>
-                    <li>✨ <strong>Access intuitive tools:</strong> Designed for creators of all levels.</li>
-                </ul>
-                <p>Ready to unlock all the features? <a href="https://capsai.co/pricing" target="_blank" style="color: #1e90ff; text-decoration: none;">Subscribe now</a> and experience everything CapsAI has to offer.</p>
-                <p>If you ever have questions or need assistance, please don't hesitate to reach out. Enjoy your CapsAI experience!</p>
-                <p>Warm regards,<br>Team CapsAI</p>
-            </div>
-            <div class="footer">
-                <p>&copy; 2024 CapsAI. All rights reserved.</p>
-                <p><a href="https://capsai.co/">Unsubscribe</a></p>
-            </div>
-          </div>
-      </body>
-      </html>
-    `
+        html: ` 
+        <!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Welcome to CapsAI</title>
+</head>
+<body>
+  <a href="https://capsai.co/" target="_blank">
+    <img src="https://capsaistore.blob.core.windows.net/capsaiassets/Welcome%20image%20(3).png" alt="Welcome Image">
+  </a>
+</body>
+</html>
+
+        `
+
     };
 
     transporter.sendMail(mailOptions, (error, info) => {
@@ -1499,110 +1417,95 @@ app.post("/api/sendVerificationCode-email-auth", async (req, res) => {
             to: email,
             subject: "Your Verification Code",
             html: `
-          <!DOCTYPE html>
-          <html>
-          <head>
-            <meta charset="utf-8">
-            <meta name="viewport" content="initial-scale=1, width=device-width">
-            <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Gilroy:wght@400;600;700;800&display=swap" />
-            <style>
-              .frame-child {
-                width: 47px;
-                position: relative;
-                height: 45.4px;
-              }
-              .verify-your-email {
-                font-weight: 600;
-              }
-              .capsai {
-                font-weight: 800;
-              }
-              .verify-your-email-container {
-                align-self: stretch;
-                position: relative;
-              }
-              .to-complete-the {
-                width: 372px;
-                position: relative;
-                font-size: 16px;
-                color: rgba(0, 0, 0, 0.5);
-                display: inline-block;
-              }
-              .verify-your-email-to-sign-up-f-parent {
-                align-self: stretch;
-                display: flex;
-                flex-direction: column;
-                align-items: center;
-                justify-content: flex-start;
-                gap: 10px;
-              }
-              .b {
-                width: 85px;
-                position: relative;
-                letter-spacing: 0.1em;
-                display: inline-block;
-                height: 24px;
-                flex-shrink: 0;
-              }
-              .wrapper {
-                align-self: stretch;
-                border-radius: 14px;
-                background-color: #f6f6f6;
-                display: flex;
-                flex-direction: row;
-                align-items: center;
-                justify-content: center;
-                padding: 20px 200px;
-                text-align: left;
-                font-size: 24px;
-              }
-              .frame-parent {
-                align-self: stretch;
-                display: flex;
-                flex-direction: column;
-                align-items: center;
-                justify-content: flex-start;
-                gap: 42px;
-              }
-              .group-parent {
-                width: 100%;
-                position: relative;
-                border-radius: 14px;
-                background-color: #fff;
-                display: flex;
-                flex-direction: column;
-                align-items: center;
-                justify-content: flex-start;
-                padding: 32px;
-                box-sizing: border-box;
-                gap: 31px;
-                text-align: center;
-                font-size: 20px;
-                color: #000;
-                font-family: Gilroy;
-              }
-            </style>
-          </head>
-          <body>
-            <div class="group-parent">
-              <img class="frame-child" alt="" src="Group 1686554423.svg">
-              <div class="frame-parent">
-                <div class="verify-your-email-to-sign-up-f-parent">
-                  <div class="verify-your-email-container">
-                    <span class="verify-your-email">Verify your email to sign up for </span>
-                    <span class="capsai">CapsAI</span>
-                  </div>
-                  <div class="to-complete-the">
-                    To complete the sign-up process, enter this 6-digit code in the original window:
-                  </div>
-                </div>
-                <div class="wrapper">
-                  <b class="b">${verificationCode}</b>
-                </div>
-              </div>
-            </div>
-          </body>
-          </html>
+            <!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>CapsAI OTP Verification</title>
+    <style>
+        @import url('https://fonts.cdnfonts.com/css/gilroy-bold');
+        
+        body {
+            font-family: 'Gilroy', sans-serif;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            height: 100vh;
+            background-color: #f9f9f9;
+            padding: 20px;
+        }
+        .container {
+            background: white;
+            padding: 32px;
+            border-radius: 12px;
+            box-shadow: 0 4px 10px rgba(0, 0, 0, 0.1);
+            text-align: center;
+            max-width: 420px;
+            width: 100%;
+        }
+        h2 {
+            font-size: 22px;
+            font-weight: bold;
+            margin-bottom: 12px;
+        }
+        p {
+            font-size: 15px;
+            color: #666;
+            margin-bottom: 20px;
+        }
+        .otp-box {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            background: #f4f4f4;
+            padding: 16px;
+            border-radius: 12px;
+            margin-top: 15px;
+        }
+        .otp {
+            font-size: 24px;
+            font-weight: bold;
+            letter-spacing: 6px;
+            flex-grow: 1;
+            text-align: center;
+        }
+        .copy-btn {
+            background: none;
+            border: none;
+            cursor: pointer;
+            font-size: 20px;
+            padding: 5px;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h2>Verify your email to sign up for <strong>CapsAI</strong></h2>
+        <p>To complete the sign-in process, enter this 4-digit code in the original window:</p>
+        <div class="otp-box">
+            <span class="otp" id="otp-code">${verificationCode}</span>
+            <button class="copy-btn" id="copy-btn">📋</button>
+        </div>
+    </div>
+
+    <script>
+        document.addEventListener("DOMContentLoaded", function () {
+            document.getElementById("copy-btn").addEventListener("click", function () {
+                const otpText = document.getElementById('otp-code').textContent.trim();
+                const textArea = document.createElement("textarea");
+                textArea.value = otpText;
+                document.body.appendChild(textArea);
+                textArea.select();
+                document.execCommand("copy");
+                document.body.removeChild(textArea);
+                alert('OTP copied to clipboard! ✅');
+            });
+        });
+    </script>
+</body>
+</html>
+
           `,
         };
 
