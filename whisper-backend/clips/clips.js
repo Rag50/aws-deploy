@@ -15,7 +15,7 @@ const azureOpenai = new OpenAI({
   endpoint: process.env.AZURE_OPENAI_ENDPOINT
 });
 
-// Main endpoint
+// cutting clips to be tested 
 app.post('/api/smartclips', async (req, res) => {
   try {
     const { youtubeUrl } = req.body;
