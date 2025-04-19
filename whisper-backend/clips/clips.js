@@ -16,6 +16,7 @@ const azureOpenai = new OpenAI({
 });
 
 // cutting clips to be tested 
+// final test
 app.post('/api/smartclips', async (req, res) => {
   try {
     const { youtubeUrl } = req.body;
