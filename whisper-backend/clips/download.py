@@ -3,16 +3,25 @@ import sys
 import os
 
 def download_video(url):
+    # ydl_opts = {
+    #     'format': 'bestvideo[ext=mp4]+bestaudio[ext=m4a]/best[ext=mp4]/best',
+    #     'outtmpl': 'downloads/%(id)s.%(ext)s',
+    #     'quiet': True,
+    #     'no_warnings': True,
+    # }
+
+    # with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+    #     info = ydl.extract_info(url, download=True)
+    #     return ydl.prepare_filename(info)
+
     ydl_opts = {
-        'format': 'bestvideo[ext=mp4]+bestaudio[ext=m4a]/best[ext=mp4]/best',
-        'outtmpl': 'downloads/%(id)s.%(ext)s',
-        'quiet': True,
-        'no_warnings': True,
+        'format': 'best',  # Download the best quality available
+        'outtmpl': 'downloads/%(id)s.%(ext)s',  # Output file name template
+        'noplaylist': True,  # Download only the video, not the playlist
     }
 
     with yt_dlp.YoutubeDL(ydl_opts) as ydl:
-        info = ydl.extract_info(url, download=True)
-        return ydl.prepare_filename(info)
+        ydl.download([url])
 
 if __name__ == "__main__":
     if len(sys.argv) != 2:
