@@ -29,6 +29,8 @@ app.post('/api/smartclips', async (req, res) => {
     try {
         const { youtubeUrl } = req.body;
 
+        // seconds change and frontend setup 
+
 
         // const videoPath = await downloadYouTubeVideo(youtubeUrl);
         // console.log(videoPath);
