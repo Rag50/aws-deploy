@@ -25,6 +25,8 @@ const INPUT_VIDEO_PATH = 'downloads/IRF-7Vq-UAU.mp4';
 //   endpoint: process.env.AZURE_OPENAI_ENDPOINT
 // });
 
+// frontend integrations 
+
 app.post('/api/smartclips', async (req, res) => {
     try {
         const { youtubeUrl } = req.body;
