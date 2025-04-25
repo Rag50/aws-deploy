@@ -259,24 +259,52 @@ async function processVideoInput(videoFilePath, isoneWord) {
 }
 
 // Helper functions
+// async function downloadYouTubeVideo(url) {
+//     return new Promise((resolve, reject) => {
+//         const pythonProcess = spawn(pythonPath, ['download_video.py', url]);
+//         let errorOutput = '';
+
+//         pythonProcess.stdout.on('data', (data) => {
+//             const output = data.toString().trim();
+//             if (output.startsWith('VIDEO_PATH:')) {
+//                 resolve(output.split(':')[1].trim());
+//             }
+//         });
+
+//         pythonProcess.stderr.on('data', (data) => {
+//             errorOutput += data.toString();
+//         });
+
+//         pythonProcess.on('close', (code) => {
+//             if (code !== 0) reject(new Error(`Python script failed: ${errorOutput}`));
+//         });
+//     });
+// }
+
 async function downloadYouTubeVideo(url) {
     return new Promise((resolve, reject) => {
-        const pythonProcess = spawn(pythonPath, ['download_video.py', url]);
+        const python = spawn('python3', ['path/to/download_script.py', url]);
+
+        let videoPath = '';
         let errorOutput = '';
 
-        pythonProcess.stdout.on('data', (data) => {
-            const output = data.toString().trim();
+        python.stdout.on('data', (data) => {
+            const output = data.toString();
             if (output.startsWith('VIDEO_PATH:')) {
-                resolve(output.split(':')[1].trim());
+                videoPath = output.replace('VIDEO_PATH:', '').trim();
             }
         });
 
-        pythonProcess.stderr.on('data', (data) => {
+        python.stderr.on('data', (data) => {
             errorOutput += data.toString();
         });
 
-        pythonProcess.on('close', (code) => {
-            if (code !== 0) reject(new Error(`Python script failed: ${errorOutput}`));
+        python.on('close', (code) => {
+            if (code === 0 && videoPath) {
+                resolve(videoPath);
+            } else {
+                reject(new Error(`Download failed: ${errorOutput}`));
+            }
         });
     });
 }
