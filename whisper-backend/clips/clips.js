@@ -27,6 +27,7 @@ const INPUT_VIDEO_PATH = 'downloads/IRF-7Vq-UAU.mp4';
 
 // frontend integrations 
 // final test 
+// prod changes
 
 app.post('/api/smartclips', async (req, res) => {
     try {
