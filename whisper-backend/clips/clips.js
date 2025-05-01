@@ -28,7 +28,6 @@ const INPUT_VIDEO_PATH = 'downloads/IRF-7Vq-UAU.mp4';
 // frontend integrations 
 // final test 
 // prod changes
-// models change 
 app.post('/api/smartclips', async (req, res) => {
     try {
         const { youtubeUrl } = req.body;
@@ -38,6 +37,8 @@ app.post('/api/smartclips', async (req, res) => {
 
         // const videoPath = await downloadYouTubeVideo(youtubeUrl);
         // console.log(videoPath);
+
+        // getting path from py 
 
         const videoPath = 'downloads/IRF-7Vq-UAU.mp4'
         let isoneWord = false
