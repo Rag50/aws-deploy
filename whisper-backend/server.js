@@ -666,7 +666,7 @@ const emojiMapping = {
 }
 
 const AZURE_OPENAI_API_KEY = '';
-
+const AZURE_OPENAI_API_KEY_INTERNATIONAL=''
 
 app.post('/api/process-video', upload.single('video'), async (req, res) => {
     try {
@@ -1054,7 +1054,7 @@ Return ONLY EMOJIS in order, one per line, no numbers or explanations.
 Words:
 ${transcriptionArray.map(t => t.value).join('\n')}`;
 
-        const response = await fetch('https://capsaiendpoint.openai.azure.com/openai/deployments/gpt-4o-mini/chat/completions?api-version=2024-08-01-preview', {
+        const response = await fetch('https://cheta-m9rbttyh-eastus2.cognitiveservices.azure.com/openai/deployments/gpt-4.1-nano/chat/completions?api-version=2025-01-01-preview', {
             method: 'POST',
             headers: {
                 'Content-Type': 'application/json',
