@@ -1048,46 +1048,52 @@ app.post("/api/verify", async (req, res) => {
 
 async function addEmojisToTranscription(transcriptionArray) {
     try {
-        // Create a optimized prompt for single words
         const prompt = `For each single word below, suggest ONE MOST RELEVANT EMOJI. 
 Return ONLY EMOJIS in order, one per line, no numbers or explanations.
 Words:
 ${transcriptionArray.map(t => t.value).join('\n')}`;
 
-        const response = await fetch('https://cheta-m9rbttyh-eastus2.cognitiveservices.azure.com/openai/deployments/gpt-4.1-nano/chat/completions?api-version=2025-01-01-preview', {
-            method: 'POST',
-            headers: {
-                'Content-Type': 'application/json',
-                'api-key': AZURE_OPENAI_API_KEY
-            },
-            body: JSON.stringify({
-                messages: [{
-                    role: 'user',
-                    content: prompt
-                }],
-                temperature: 0.3  // More focused responses
-            })
-        });
+        const response = await fetch(
+            'https://cheta-m9rbttyh-eastus2.cognitiveservices.azure.com/openai/deployments/gpt-4.1-nano/chat/completions?api-version=2025-01-01-preview',
+            {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'api-key': AZURE_OPENAI_API_KEY_INTERNATIONAL
+                },
+                body: JSON.stringify({
+                    messages: [
+                        {
+                            role: 'user',
+                            content: prompt
+                        }
+                    ],
+                    temperature: 0.3
+                })
+            }
+        );
 
         const data = await response.json();
-
-        // Improved emoji extraction
         const emojiResponse = data?.choices?.[0]?.message?.content || '';
+
         const emojis = emojiResponse
             .split('\n')
             .map(line => {
-                // Extract first emoji from each line
                 const match = line.match(/[\p{Emoji}]/gu);
-                return match ? match[0] : '';
+                return match ? match[0] : null;
             })
-            .filter(emoji => emoji);
+            .filter(Boolean);
 
-        // Map emojis to original words with fallback
+        // Ensure the emoji list is the same length
+        const fallbackEmojis = ['✨', '🌟', '🔥', '💡', '📌', '✅', '🎯', '📍', '🌈', '💫', '🔸', '🔹'];
+        while (emojis.length < transcriptionArray.length) {
+            emojis.push(fallbackEmojis[Math.floor(Math.random() * fallbackEmojis.length)]);
+        }
+
         return transcriptionArray.map((transcription, index) => ({
             ...transcription,
-            value: `${transcription.value} ${emojis[index] || '❔'}` // Fallback emoji
+            value: `${transcription.value} ${emojis[index]}`
         }));
-
     } catch (error) {
         console.error('Error processing transcriptions:', error);
         return transcriptionArray.map(t => ({ ...t, value: `${t.value} ⚠️` }));
