@@ -666,7 +666,7 @@ const emojiMapping = {
 }
 
 const AZURE_OPENAI_API_KEY = '';
-const AZURE_OPENAI_API_KEY_INTERNATIONAL=''
+const AZURE_OPENAI_API_KEY_INTERNATIONAL = ''
 
 app.post('/api/process-video', upload.single('video'), async (req, res) => {
     try {
@@ -1432,6 +1432,10 @@ app.post("/api/sendVerificationCode-email-auth", async (req, res) => {
         console.error("Error sending verification code:", error);
         res.status(500).json({ message: "Failed to send email", error: error.message });
     }
+});
+
+app.post('/api/magic-demo-gcp', upload.single('video'), async (req, res) => {
+
 });
 
 
