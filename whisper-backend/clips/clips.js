@@ -20,15 +20,6 @@ const pythonPath = path.join(__dirname, 'venv', 'bin', 'python');
 let SRT_CONTENT = '';
 const INPUT_VIDEO_PATH = 'downloads/IRF-7Vq-UAU.mp4';
 
-// const azureOpenai = new OpenAI({
-//   apiKey: process.env.AZURE_OPENAI_KEY,
-//   endpoint: process.env.AZURE_OPENAI_ENDPOINT
-// });
-
-// frontend integrations 
-// final test 
-// prod changes
-// move fill to gcp
 app.post('/api/smartclips', async (req, res) => {
     try {
         const { youtubeUrl } = req.body;
@@ -36,12 +27,8 @@ app.post('/api/smartclips', async (req, res) => {
         // seconds change and frontend setup 
 
 
-        // const videoPath = await downloadYouTubeVideo(youtubeUrl);
-        // console.log(videoPath);
-
-        // getting path from py 
-
-        const videoPath = 'downloads/IRF-7Vq-UAU.mp4'
+        const videoPath = await downloadYouTubeVideo(youtubeUrl);
+    
         let isoneWord = false
 
         let transcription = await processVideoInput(videoPath, isoneWord);
