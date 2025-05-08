@@ -308,10 +308,7 @@ app.post('/api/change-style', upload.single('video'), async (req, res) => {
         let outputUpload
         let outputVideoUrl
 
-        // 10 mins watermark and 10 mins no watermark change 
-        // save  logic update 
-        // magic link 
-        // machine side error 
+        // save logic  to gcp 
         if (save) {
 
             // Upload output video to S3
