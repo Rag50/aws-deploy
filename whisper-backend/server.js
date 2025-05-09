@@ -185,6 +185,40 @@ app.post('/api/process-video', upload.single('video'), async (req, res) => {
 
 app.post('/api/change-style', upload.single('video'), async (req, res) => {
     try {
+
+        if (req.body.deletion) {
+            // Verify scheduler identity
+            if (req.get('X-CloudScheduler') !== 'true') {
+                console.error('Unauthorized deletion attempt');
+                return res.status(403).json({ error: 'Unauthorized' });
+            }
+
+            // Verify HMAC signature
+            const receivedSignature = req.get('X-Signature');
+            const expectedSignature = crypto
+                .createHmac('sha256', process.env.SCHEDULER_SECRET)
+                .update(JSON.stringify(req.body))
+                .digest('hex');
+
+            if (receivedSignature !== expectedSignature) {
+                console.error('Invalid signature:', { receivedSignature, expectedSignature });
+                return res.status(403).json({ error: 'Invalid signature' });
+            }
+
+            // Process deletions
+            if (req.body.deleteType === 'azure-blob') {
+                await deleteFromAzure(req.body.containerName, req.body.blobName);
+                console.log(`Deleted Azure blob: ${req.body.blobName}`);
+            }
+            else if (req.body.deleteType === 'firestore-doc') {
+                const docRef = admin.firestore().doc(req.body.docPath);
+                await docRef.delete();
+                console.log(`Deleted Firestore document: ${req.body.docPath}`);
+            }
+
+            return res.status(204).end();
+        }
+
         const { inputVideo, font, color, xPosition, yPosition, srtUrl, Fontsize, userdata, uid, save, keyS3, transcriptions, isOneword, videoResolution, soundEffects } = req.body;
         if (!inputVideo || !font || !color || !xPosition || !yPosition || !srtUrl || !Fontsize || !userdata || !uid) {
             return res.status(400).json({ error: 'Missing required fields in the request body' });
@@ -308,56 +342,90 @@ app.post('/api/change-style', upload.single('video'), async (req, res) => {
         let outputUpload
         let outputVideoUrl
 
-        // save logic  to gcp 
+        // save logic  old one 
+        // if (save) {
+
+        //     // Upload output video to S3
+        //     // outputUpload = await uploadToS3(outputFilePath, 'capsuservideos');
+        //     // outputVideoUrl = outputUpload.Location;
+        //     outputUpload = await uploadToAzure(outputFilePath);
+        //     outputVideoUrl = outputUpload.url;
+        //     // Schedule deletion based on user type
+        //     if (userdata.usertype === 'free') {
+        //         scheduleFileDeletion('capsuservideos', keyS3, 15)
+        //         scheduleFileDeletion('capsuservideos', outputUpload.blobName, 15);
+        //     } else {
+        //         scheduleFileDeletion('capsuservideos', keyS3, 20)
+        //         scheduleFileDeletion('capsuservideos', outputUpload.blobName, 20);
+        //     }
+
+        //     // Delete the input video
+        //     // await deleteFromS3(videoPath, 'capsuservideos');
+
+        //     const videos = userdata.videos || [];
+
+
+        //     const newDocRef = await db.collection('users').doc(uid).collection('videos').add({
+        //         videoUrl: videoPath,
+        //         srt: srtUrl,
+        //         fontadded: font,
+        //         createdAt: admin.firestore.FieldValue.serverTimestamp(),
+        //         key: keyS3,
+        //         transcriptions: transcriptions
+        //     });
+        //     const docId = newDocRef.id;
+        //     const docPath = `users/${uid}/videos`
+        //     if (userdata.usertype === 'free') {
+        //         scheduleDocumentDeletion(docPath, docId, 15)
+        //     } else {
+        //         scheduleDocumentDeletion(docPath, docId, 20)
+        //     }
+
+        // } else {
+
+        //     outputUpload = await uploadToAzure(outputFilePath);
+        //     outputVideoUrl = outputUpload.url;
+
+        //     scheduleFileDeletion('capsuservideos', outputUpload.blobName, 5);
+
+        //     scheduleFileDeletion('capsuservideos', keyS3, 5)
+
+
+        //     // await deleteFromS3(videoPath, 'capsuservideos');
+        // }
+
         if (save) {
-
-            // Upload output video to S3
-            // outputUpload = await uploadToS3(outputFilePath, 'capsuservideos');
-            // outputVideoUrl = outputUpload.Location;
             outputUpload = await uploadToAzure(outputFilePath);
-            outputVideoUrl = outputUpload.url;
-            // Schedule deletion based on user type
-            if (userdata.usertype === 'free') {
-                scheduleFileDeletion('capsuservideos', keyS3, 15)
-                scheduleFileDeletion('capsuservideos', outputUpload.blobName, 15);
-            } else {
-                scheduleFileDeletion('capsuservideos', keyS3, 20)
-                scheduleFileDeletion('capsuservideos', outputUpload.blobName, 20);
-            }
+        } else {
+            outputUpload = await uploadToAzure(outputFilePath);
+            scheduleDeletion('azure-blob', {
+                containerName: 'capsuservideos',
+                blobName: outputUpload.blobName
+            }, 5);
+        }
 
-            // Delete the input video
-            // await deleteFromS3(videoPath, 'capsuservideos');
+        if (save) {
+            const deletionDelay = userdata.usertype === 'free' ? 15 : 20;
 
-            const videos = userdata.videos || [];
+            // Schedule video deletion
+            await scheduleDeletion('azure-blob', {
+                containerName: 'capsuservideos',
+                blobName: outputUpload.blobName
+            }, deletionDelay);
 
-
+            // Schedule Firestore document deletion
             const newDocRef = await db.collection('users').doc(uid).collection('videos').add({
-                videoUrl: videoPath,
+                videoUrl: outputUpload.url,
                 srt: srtUrl,
                 fontadded: font,
                 createdAt: admin.firestore.FieldValue.serverTimestamp(),
-                key: keyS3,
+                key: outputUpload.blobName,
                 transcriptions: transcriptions
             });
-            const docId = newDocRef.id;
-            const docPath = `users/${uid}/videos`
-            if (userdata.usertype === 'free') {
-                scheduleDocumentDeletion(docPath, docId, 15)
-            } else {
-                scheduleDocumentDeletion(docPath, docId, 20)
-            }
 
-        } else {
-
-            outputUpload = await uploadToAzure(outputFilePath);
-            outputVideoUrl = outputUpload.url;
-
-            scheduleFileDeletion('capsuservideos', outputUpload.blobName, 5);
-
-            scheduleFileDeletion('capsuservideos', keyS3, 5)
-
-
-            // await deleteFromS3(videoPath, 'capsuservideos');
+            await scheduleDeletion('firestore-doc', {
+                docPath: `users/${uid}/videos/${newDocRef.id}`
+            }, deletionDelay);
         }
 
 
@@ -403,6 +471,41 @@ app.post('/api/change-style', upload.single('video'), async (req, res) => {
         res.status(500).json({ error: error.message });
     }
 });
+
+async function scheduleDeletion(type, params, delayMinutes) {
+    const parent = schedulerClient.locationPath(process.env.GCP_PROJECT_ID, process.env.GCP_REGION);
+    const deletionTime = new Date(Date.now() + delayMinutes * 60000);
+
+    const payload = {
+        deletion: true,
+        deleteType: type === 'azure-blob' ? 'azure-blob' : 'firestore-doc',
+        ...params
+    };
+
+    // Generate HMAC signature
+    const signature = crypto
+        .createHmac('sha256', process.env.SCHEDULER_SECRET)
+        .update(JSON.stringify(payload))
+        .digest('hex');
+
+    const job = {
+        name: `${parent}/jobs/${type}-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+        httpTarget: {
+            uri: `${process.env.SERVICE_URL}/api/change-style`,
+            httpMethod: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                'X-CloudScheduler': 'true',
+                'X-Signature': signature
+            },
+            body: Buffer.from(JSON.stringify(payload)).toString('base64')
+        },
+        schedule: `at ${deletionTime.toISOString().split('.')[0]}Z`,
+        timeZone: 'UTC'
+    };
+
+    await schedulerClient.createJob({ parent, job });
+}
 
 
 // one word ai emoji sync addition 
