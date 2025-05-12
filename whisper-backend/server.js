@@ -343,90 +343,90 @@ app.post('/api/change-style', upload.single('video'), async (req, res) => {
         let outputVideoUrl
 
         // save logic  old one 
-        // if (save) {
-
-        //     // Upload output video to S3
-        //     // outputUpload = await uploadToS3(outputFilePath, 'capsuservideos');
-        //     // outputVideoUrl = outputUpload.Location;
-        //     outputUpload = await uploadToAzure(outputFilePath);
-        //     outputVideoUrl = outputUpload.url;
-        //     // Schedule deletion based on user type
-        //     if (userdata.usertype === 'free') {
-        //         scheduleFileDeletion('capsuservideos', keyS3, 15)
-        //         scheduleFileDeletion('capsuservideos', outputUpload.blobName, 15);
-        //     } else {
-        //         scheduleFileDeletion('capsuservideos', keyS3, 20)
-        //         scheduleFileDeletion('capsuservideos', outputUpload.blobName, 20);
-        //     }
-
-        //     // Delete the input video
-        //     // await deleteFromS3(videoPath, 'capsuservideos');
-
-        //     const videos = userdata.videos || [];
-
-
-        //     const newDocRef = await db.collection('users').doc(uid).collection('videos').add({
-        //         videoUrl: videoPath,
-        //         srt: srtUrl,
-        //         fontadded: font,
-        //         createdAt: admin.firestore.FieldValue.serverTimestamp(),
-        //         key: keyS3,
-        //         transcriptions: transcriptions
-        //     });
-        //     const docId = newDocRef.id;
-        //     const docPath = `users/${uid}/videos`
-        //     if (userdata.usertype === 'free') {
-        //         scheduleDocumentDeletion(docPath, docId, 15)
-        //     } else {
-        //         scheduleDocumentDeletion(docPath, docId, 20)
-        //     }
-
-        // } else {
-
-        //     outputUpload = await uploadToAzure(outputFilePath);
-        //     outputVideoUrl = outputUpload.url;
-
-        //     scheduleFileDeletion('capsuservideos', outputUpload.blobName, 5);
-
-        //     scheduleFileDeletion('capsuservideos', keyS3, 5)
-
-
-        //     // await deleteFromS3(videoPath, 'capsuservideos');
-        // }
-
         if (save) {
+
+            // Upload output video to S3
+            // outputUpload = await uploadToS3(outputFilePath, 'capsuservideos');
+            // outputVideoUrl = outputUpload.Location;
             outputUpload = await uploadToAzure(outputFilePath);
-        } else {
-            outputUpload = await uploadToAzure(outputFilePath);
-            scheduleDeletion('azure-blob', {
-                containerName: 'capsuservideos',
-                blobName: outputUpload.blobName
-            }, 5);
-        }
+            outputVideoUrl = outputUpload.url;
+            // Schedule deletion based on user type
+            if (userdata.usertype === 'free') {
+                scheduleFileDeletion('capsuservideos', keyS3, 15)
+                scheduleFileDeletion('capsuservideos', outputUpload.blobName, 15);
+            } else {
+                scheduleFileDeletion('capsuservideos', keyS3, 20)
+                scheduleFileDeletion('capsuservideos', outputUpload.blobName, 20);
+            }
 
-        if (save) {
-            const deletionDelay = userdata.usertype === 'free' ? 15 : 20;
+            // Delete the input video
+            // await deleteFromS3(videoPath, 'capsuservideos');
 
-            // Schedule video deletion
-            await scheduleDeletion('azure-blob', {
-                containerName: 'capsuservideos',
-                blobName: outputUpload.blobName
-            }, deletionDelay);
+            const videos = userdata.videos || [];
 
-            // Schedule Firestore document deletion
+
             const newDocRef = await db.collection('users').doc(uid).collection('videos').add({
-                videoUrl: outputUpload.url,
+                videoUrl: videoPath,
                 srt: srtUrl,
                 fontadded: font,
                 createdAt: admin.firestore.FieldValue.serverTimestamp(),
-                key: outputUpload.blobName,
+                key: keyS3,
                 transcriptions: transcriptions
             });
+            const docId = newDocRef.id;
+            const docPath = `users/${uid}/videos`
+            if (userdata.usertype === 'free') {
+                scheduleDocumentDeletion(docPath, docId, 15)
+            } else {
+                scheduleDocumentDeletion(docPath, docId, 20)
+            }
 
-            await scheduleDeletion('firestore-doc', {
-                docPath: `users/${uid}/videos/${newDocRef.id}`
-            }, deletionDelay);
+        } else {
+
+            outputUpload = await uploadToAzure(outputFilePath);
+            outputVideoUrl = outputUpload.url;
+
+            scheduleFileDeletion('capsuservideos', outputUpload.blobName, 5);
+
+            scheduleFileDeletion('capsuservideos', keyS3, 5)
+
+
+            // await deleteFromS3(videoPath, 'capsuservideos');
         }
+
+        // if (save) {
+        //     outputUpload = await uploadToAzure(outputFilePath);
+        // } else {
+        //     outputUpload = await uploadToAzure(outputFilePath);
+        //     scheduleDeletion('azure-blob', {
+        //         containerName: 'capsuservideos',
+        //         blobName: outputUpload.blobName
+        //     }, 5);
+        // }
+
+        // if (save) {
+        //     const deletionDelay = userdata.usertype === 'free' ? 15 : 20;
+
+        //     // Schedule video deletion
+        //     await scheduleDeletion('azure-blob', {
+        //         containerName: 'capsuservideos',
+        //         blobName: outputUpload.blobName
+        //     }, deletionDelay);
+
+        //     // Schedule Firestore document deletion
+        //     const newDocRef = await db.collection('users').doc(uid).collection('videos').add({
+        //         videoUrl: outputUpload.url,
+        //         srt: srtUrl,
+        //         fontadded: font,
+        //         createdAt: admin.firestore.FieldValue.serverTimestamp(),
+        //         key: outputUpload.blobName,
+        //         transcriptions: transcriptions
+        //     });
+
+        //     await scheduleDeletion('firestore-doc', {
+        //         docPath: `users/${uid}/videos/${newDocRef.id}`
+        //     }, deletionDelay);
+        // }
 
 
         const videoDuration = await getVideoDuration(videoPath);
