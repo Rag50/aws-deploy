@@ -3,44 +3,40 @@ const admin = require('firebase-admin');
 const { BlobServiceClient } = require('@azure/storage-blob');
 
 admin.initializeApp();
-const db = admin.firestore();
+const blobServiceClient = BlobServiceClient.fromConnectionString(functions.config().azure.store);
 
-const AZURE_CONNECTION_STRING = functions.config().azure.conn;
-
-exports.deleteExpiredResources = functions.pubsub
-  .schedule('every 24 hours') // You can also use a cron string like '0 * * * *' for hourly
+exports.scheduledDeletion = functions.pubsub
+  .schedule('every 1 minutes')
+  .timeZone('UTC')
   .onRun(async (context) => {
     const now = admin.firestore.Timestamp.now();
-    const snapshot = await db.collection('scheduledDeletions')
+    const tasks = await admin.firestore()
+      .collection('deletionTasks')
       .where('deleteAt', '<=', now)
       .get();
 
-    if (snapshot.empty) {
-      console.log('No expired deletions found.');
-      return null;
-    }
+    const deletePromises = tasks.docs.map(async (doc) => {
+      const task = doc.data();
 
-    const blobServiceClient = BlobServiceClient.fromConnectionString(AZURE_CONNECTION_STRING);
-
-    for (const doc of snapshot.docs) {
-      const data = doc.data();
       try {
-        if (data.type === 'file') {
-          const containerClient = blobServiceClient.getContainerClient(data.container);
-          const blobClient = containerClient.getBlockBlobClient(data.blobName);
-          await blobClient.deleteIfExists();
-          console.log(`Deleted Azure blob: ${data.blobName}`);
-        } else if (data.type === 'doc') {
-          const docPath = `${data.path}/${data.docId}`;
-          await db.doc(docPath).delete();
-          console.log(`Deleted Firestore doc: ${docPath}`);
+        if (task.type === 'azure-blob') {
+          const containerClient = blobServiceClient.getContainerClient(task.containerName);
+          const blockBlobClient = containerClient.getBlockBlobClient(task.blobName);
+          await blockBlobClient.delete();
+          console.log(`Deleted Azure blob: ${task.blobName}`);
         }
-        await doc.ref.delete(); // Clean up from scheduledDeletions
-      } catch (err) {
-        console.error('Error deleting resource:', err);
-      }
-    }
+        else if (task.type === 'firestore-doc') {
+          await admin.firestore().doc(task.docPath).delete();
+          console.log(`Deleted Firestore document: ${task.docPath}`);
+        }
 
+        await doc.ref.delete();
+      } catch (error) {
+        console.error(`Deletion failed for task ${doc.id}:`, error);
+        await doc.ref.update({ error: error.message });
+      }
+    });
+
+    await Promise.all(deletePromises);
     return null;
   });
-
