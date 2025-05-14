@@ -20,11 +20,10 @@ const pythonPath = path.join(__dirname, 'venv', 'bin', 'python');
 let SRT_CONTENT = '';
 const INPUT_VIDEO_PATH = 'downloads/IRF-7Vq-UAU.mp4';
 
+// gcp setup with cleanup
 app.post('/api/smartclips', async (req, res) => {
     try {
         const { youtubeUrl } = req.body;
-
-        // seconds change and frontend setup 
 
 
         const videoPath = await downloadYouTubeVideo(youtubeUrl);
