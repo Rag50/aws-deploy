@@ -10,7 +10,7 @@ const port = process.env.PORT || 3000;
 const FormData = require('form-data');
 const axios = require('axios');
 const { tmpName } = require('tmp-promise');
-const SrtParser = require('srt-parser-2').default; // Fixed initialization
+const SrtParser = require('srt-parser-2').default;
 const parser = new SrtParser();
 const ffmpeg = require('fluent-ffmpeg');
 const FFMPEG_PATH = 'ffmpeg';
@@ -18,17 +18,17 @@ const FFMPEG_PATH = 'ffmpeg';
 app.use(express.json());
 const pythonPath = path.join(__dirname, 'venv', 'bin', 'python');
 let SRT_CONTENT = '';
-const INPUT_VIDEO_PATH = 'downloads/IRF-7Vq-UAU.mp4';
+let INPUT_VIDEO_PATH = '';
 
-// gcp setup with cleanup
 app.post('/api/smartclips', async (req, res) => {
     try {
         const { youtubeUrl } = req.body;
 
-
         const videoPath = await downloadYouTubeVideo(youtubeUrl);
-    
-        let isoneWord = false
+        console.log(videoPath, 'path');
+        INPUT_VIDEO_PATH = videoPath;
+
+        let isoneWord = true
 
         let transcription = await processVideoInput(videoPath, isoneWord);
 
@@ -46,48 +46,30 @@ app.post('/api/smartclips', async (req, res) => {
         SRT_CONTENT = srtContent;
 
         const clipTimestamps = await analyzeSRTWithGPT(srtContent);
-        console.log(clipTimestamps);
+        const parsedClips = JSON.parse(clipTimestamps);
 
 
 
         const sampleClips = {
             clips: [
-                { start: "00:04:58", end: "00:05:58", reason: "conflict_resolution" },
+                { start: "00:02:49", end: "00:03:19", reason: "Conflict/resolution moments" },
             ]
 
         };
 
-        //         "clips": [
-        //     {
-        //       "start": "00:00:17",
-        //       "end": "00:01:17",
-        //       "reason": "emotional_peak"
-        //     },
-        //     {
-        //       "start": "00:01:36",
-        //       "end": "00:02:36",
-        //       "reason": "humorous_exchange"
-        //     },
-        //     {
-        //       "start": "00:02:54",
-        //       "end": "00:03:54",
-        //       "reason": "surprising_twist"
-        //     },
-        //     {
-        //       "start": "00:04:58",
-        //       "end": "00:05:58",
-        //       "reason": "conflict_resolution"
-        //     },
-        //     {
-        //       "start": "00:06:30",
-        //       "end": "00:07:30",
-        //       "reason": "visually_striking_scene"
-        //     }
-        //   ]
 
-        processClips(sampleClips)
-            .then(results => console.log('Processing complete:', results))
-            .catch(err => console.error('Main error:', err));
+        const processingResults = await processClips(parsedClips);
+        console.log('Processing complete:', processingResults);
+
+
+        const clipData = processingResults.map(result => ({
+            videoUrl: result.url,
+            start: result.start,
+            end: result.end,
+            reason: result.reason
+        }));
+
+        res.json({ clips: clipData });
 
     } catch (error) {
         console.error('Error:', error);
@@ -167,13 +149,13 @@ function formatTime(seconds) {
 function secondsToSRTTime(seconds) {
     const date = new Date(0);
     date.setSeconds(seconds);
-    const time = date.toISOString().substr(11, 12); // Get "HH:MM:SS.mmm"
-    return time.replace('.', ','); // Replace dot with comma for SRT format
+    const time = date.toISOString().substr(11, 12);
+    return time.replace('.', ',');
 }
 
 async function callWhisper(audioFilePath, isoneWord) {
     console.log(audioFilePath);
-    const url = `https://capsaiendpoint.openai.azure.com/openai/deployments/whisper/audio/transcriptions?api-version=2024-02-15-preview`; // Changed to transcriptions and updated API version
+    const url = `https://capsaiendpoint.openai.azure.com/openai/deployments/whisper/audio/transcriptions?api-version=2024-02-15-preview`;
 
     const formData = new FormData();
     formData.append('file', fsf.createReadStream(audioFilePath), { filename: 'audio.wav' });
@@ -249,64 +231,32 @@ async function processVideoInput(videoFilePath, isoneWord) {
 }
 
 // Helper functions
-// async function downloadYouTubeVideo(url) {
-//     return new Promise((resolve, reject) => {
-//         const pythonProcess = spawn(pythonPath, ['download_video.py', url]);
-//         let errorOutput = '';
-
-//         pythonProcess.stdout.on('data', (data) => {
-//             const output = data.toString().trim();
-//             if (output.startsWith('VIDEO_PATH:')) {
-//                 resolve(output.split(':')[1].trim());
-//             }
-//         });
-
-//         pythonProcess.stderr.on('data', (data) => {
-//             errorOutput += data.toString();
-//         });
-
-//         pythonProcess.on('close', (code) => {
-//             if (code !== 0) reject(new Error(`Python script failed: ${errorOutput}`));
-//         });
-//     });
-// }
-
 async function downloadYouTubeVideo(url) {
     return new Promise((resolve, reject) => {
-        const python = spawn('python3', ['path/to/download_script.py', url]);
-
-        let videoPath = '';
+        const pythonProcess = spawn(pythonPath, ['download_video.py', url]);
         let errorOutput = '';
 
-        python.stdout.on('data', (data) => {
-            const output = data.toString();
+        pythonProcess.stdout.on('data', (data) => {
+            const output = data.toString().trim();
             if (output.startsWith('VIDEO_PATH:')) {
-                videoPath = output.replace('VIDEO_PATH:', '').trim();
+                resolve(output.split(':')[1].trim());
             }
         });
 
-        python.stderr.on('data', (data) => {
+        pythonProcess.stderr.on('data', (data) => {
             errorOutput += data.toString();
         });
 
-        python.on('close', (code) => {
-            if (code === 0 && videoPath) {
-                resolve(videoPath);
-            } else {
-                reject(new Error(`Download failed: ${errorOutput}`));
-            }
+        pythonProcess.on('close', (code) => {
+            if (code !== 0) reject(new Error(`Python script failed: ${errorOutput}`));
         });
     });
 }
 
-async function generateSRT(videoPath) {
-    return `1
-00:00:00,000 --> 00:00:04,000
-Sample subtitle text for demonstration`;
-}
+
 
 async function analyzeSRTWithGPT(srtContent) {
-    const prompt = `Analyze this SRT file and suggest 4-5 potential viral clips (exactly 60s each). Follow these rules:
+    const prompt = `Analyze this SRT file and suggest 4-5 potential viral clips (exactly 30s each). Follow these rules:
 1. Identify different types of viral moments:
    - Humorous exchanges
    - Emotional peaks (drama, inspiration)
@@ -344,7 +294,7 @@ Respond STRICTLY with JSON in this format:
 }`;
 
 
-    const url = `https://capsaiendpoint.openai.azure.com/openai/deployments/gpt-4o-mini/chat/completions?api-version=2024-08-01-preview`;
+    const url = `https://cheta-m9rbttyh-eastus2.cognitiveservices.azure.com/openai/deployments/gpt-4.1-mini/chat/completions?api-version=2025-01-01-preview`;
 
     const data = {
         messages: [
@@ -366,89 +316,6 @@ Respond STRICTLY with JSON in this format:
         throw error;
     }
 }
-
-async function processSRTForClip(srtContent, clipStart, clipEnd) {
-    const blocks = srtContent.split('\n\n');
-    let filtered = [];
-    let counter = 1;
-
-    const toSeconds = (time) => {
-        const [h, m, s] = time.split(':');
-        return (+h * 3600) + (+m * 60) + (+s);
-    };
-
-    for (const block of blocks) {
-        const lines = block.split('\n');
-        if (lines.length < 3) continue;
-
-        const [startTime, endTime] = lines[1].split(' --> ');
-        const start = toSeconds(startTime.split(',')[0]);
-        const end = toSeconds(endTime.split(',')[0]);
-
-        if (end < toSeconds(clipStart) || start > toSeconds(clipEnd)) continue;
-
-        const adjustedStart = Math.max(start - toSeconds(clipStart), 0);
-        const adjustedEnd = Math.min(end - toSeconds(clipStart), toSeconds(clipEnd) - toSeconds(clipStart));
-
-        filtered.push(
-            `${counter}\n` +
-            `${formatTime(adjustedStart)} --> ${formatTime(adjustedEnd)}\n` +
-            lines.slice(2).join('\n')
-        );
-        counter++;
-    }
-
-    return filtered.join('\n\n');
-
-    function formatTime(seconds) {
-        const date = new Date(seconds * 1000);
-        return [
-            date.getUTCHours().toString().padStart(2, '0'),
-            date.getUTCMinutes().toString().padStart(2, '0'),
-            date.getUTCSeconds().toString().padStart(2, '0')
-        ].join(':') + ',000';
-    }
-}
-
-async function extractClipWithFFmpeg(videoPath, timestamps, srtContent) {
-    const clipName = `clip_${Date.now()}.mp4`;
-    const clipPath = path.join(__dirname, 'clips', clipName);
-    const srtPath = path.join(__dirname, 'clips', `temp_${Date.now()}.srt`);
-
-    await fs.writeFile(srtPath, srtContent);
-
-    const args = [
-        '-y',
-        '-ss', timestamps.start,
-        '-to', timestamps.end,
-        '-i', videoPath,
-        '-vf', `subtitles=${srtPath}:force_style='FontName=Arial,FontSize=24,PrimaryColour=&Hffffff'`,
-        '-c:v', 'libx264',
-        '-preset', 'fast',
-        '-c:a', 'aac',
-        '-b:a', '128k',
-        clipPath
-    ];
-
-    await new Promise((resolve, reject) => {
-        const ffmpeg = spawn('ffmpeg', args);
-        ffmpeg.stderr.on('data', (d) => console.error(d.toString()));
-        ffmpeg.on('close', async (code) => {
-            await fs.unlink(srtPath).catch(console.error);
-            code === 0 ? resolve() : reject(new Error('FFmpeg failed'));
-        });
-    });
-
-    return clipPath;
-}
-
-async function cleanupFiles(files) {
-    for (const file of files) {
-        await fs.unlink(file).catch(console.error);
-    }
-}
-
-
 
 
 
@@ -566,15 +433,18 @@ function runFFmpeg(args) {
     });
 }
 
+
 // Process single clip
 async function processClip(clip, subtitles) {
-    console.log(subtitles, 'fffff');
     const clipStart = srtTimeToSeconds(clip.start);
     const clipEnd = srtTimeToSeconds(clip.end);
     const duration = clipEnd - clipStart;
 
-    const tempSrtPath = path.join(__dirname, 'downloads', 'temp.srt');;
-    const tempVideoPath = path.join(__dirname, 'downloads', 'temp.mp4');
+    // Generate unique filename using timestamp
+    const clipId = `${clip.start.replace(/:/g, '')}-${clip.end.replace(/:/g, '')}`;
+    const tempSrtPath = path.join(__dirname, 'clips', `temp_${clipId}.srt`);
+    const clipName = `clip_${clipId}.mp4`;
+    const clipPath = path.join(__dirname, 'clips', clipName);
 
     try {
         // Create filtered SRT
@@ -583,8 +453,6 @@ async function processClip(clip, subtitles) {
         if (subs.length === 0) {
             throw new Error('No subtitles found in clip duration');
         }
-
-        console.log(subs);
 
         const srtContent = subs.map(sub =>
             `${sub.id}\n${sub.startTime} --> ${sub.endTime}\n${sub.text}`
@@ -604,50 +472,45 @@ async function processClip(clip, subtitles) {
             '-preset', 'fast',
             '-c:a', 'aac',
             '-b:a', '128k',
-            tempVideoPath
+            clipPath // Use unique path
         ];
 
         await runFFmpeg(args);
 
-        // Upload to Azure
-        //   const blobName = `${clip.reason}_${clip.start}-${clip.end}.mp4`
-        //     .replace(/:/g, '-')
-        //     .replace(/\s+/g, '_');
 
-        //   const blobServiceClient = BlobServiceClient.fromConnectionString(AZURE_CONNECTION_STRING);
-        //   const containerClient = blobServiceClient.getContainerClient(CONTAINER_NAME);
-        //   const blockBlobClient = containerClient.getBlockBlobClient(blobName);
+        const azureUrl = await uploadToAzure(clipPath, `clips/${clipName}`);
+        console.log('Azure URL:', azureUrl);
 
-        //   await blockBlobClient.uploadFile(tempVideoPath, {
-        //     blobHTTPHeaders: { blobContentType: 'video/mp4' }
-        //   });
+        // Cleanup local file
+        await deleteLocalFile(clipPath);
 
-        return { ...clip };
+        return {
+            ...clip,
+            url: azureUrl,
+            srt: srtContent
+        };
     } finally {
-        await Promise.allSettled([
-            // fs.unlink(tempSrtPath).catch(() => {}),
-            // fs.unlink(tempVideoPath).catch(() => {})
-        ]);
+        await fs.unlink(tempSrtPath).catch(() => { });
     }
 }
 
-// Main processing
-async function processClips(clips) {
-    const subtitles = parser.fromSrt(SRT_CONTENT);
 
-    for (const clip of clips.clips) {
+async function processClips(parsedClips) {
+    const subtitles = parser.fromSrt(SRT_CONTENT);
+    const results = [];
+
+    for (const clip of parsedClips.clips) {
         try {
             const result = await processClip(clip, subtitles);
-            console.log(`Processed clip: ${result.url}`);
+            results.push(result);
+            console.log(`Processed clip: ${result.path}`);
         } catch (error) {
             console.error(`Failed to process ${clip.start}-${clip.end}:`, error.message);
         }
     }
+
+    return results;
 }
-
-
-
-
 
 
 // Create necessary directories
@@ -657,10 +520,7 @@ async function initialize() {
 }
 
 
-
-
-
-
 initialize().then(() => {
+    app.use('/clips', express.static(path.join(__dirname, 'clips')));
     app.listen(port, () => console.log(`Server running on port ${port}`));
 });
