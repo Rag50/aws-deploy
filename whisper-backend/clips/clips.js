@@ -13,6 +13,7 @@ const { tmpName } = require('tmp-promise');
 const SrtParser = require('srt-parser-2').default;
 const parser = new SrtParser();
 const ffmpeg = require('fluent-ffmpeg');
+const { uploadToAzure, deleteLocalFile } = require('./azureStorage')
 const FFMPEG_PATH = 'ffmpeg';
 
 app.use(express.json());
