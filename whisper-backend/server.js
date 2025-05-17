@@ -23,9 +23,6 @@ const dotenv = require('dotenv');
 const crypto = require("crypto");
 const { Cashfree } = require("cashfree-pg");
 dotenv.config();
-const openai = new OpenAI({
-    apiKey: process.env.OPEN_AI,
-});
 
 var serviceAccount = require("./caps-85254-firebase-adminsdk-31j3r-0edeb4bd98.json");
 
