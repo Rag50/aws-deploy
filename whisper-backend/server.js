@@ -1725,18 +1725,19 @@ function formatTime(seconds) {
 
 
 async function callGPT4(language, changetext) {
-    console.log(changetext);
     let prompt;
 
+
     if (language === 'Hindi') {
-        prompt = `Convert the following text to Hindi in pure Devanagari alphabets in SRT format. Provide only the translation in plain SRT format without any code block or additional formatting:\n\n${changetext}`;
+        prompt = `You are a professional subtitle translator. Convert the following subtitles to Hindi using pure Devanagari script. Maintain the original SRT formatting strictly — including the sequence numbers, time codes, and line breaks. Do not omit or change any content. Return only the translated subtitles in plain SRT format without any explanations, code blocks, or additional notes:\n\n${changetext}`;
     } else if (language === 'English') {
-        prompt = `Convert the following text to English in SRT format. Provide only the translation in plain SRT format without any code block or additional formatting:\n\n${changetext}`;
+        prompt = `You are a professional subtitle translator. Convert the following subtitles to English. Maintain the original SRT formatting strictly — including the sequence numbers, time codes, and line breaks. Do not omit or change any content. Return only the translated subtitles in plain SRT format without any explanations, code blocks, or additional notes:\n\n${changetext}`;
     } else {
-        prompt = `Convert the following Hindi text to Hinglish in SRT format. Provide only the translation in plain SRT format without any code block or additional formatting:\n\n${changetext}`;
+        prompt = `You are a professional subtitle translator. Convert the following Hindi subtitles to Hinglish (Hindi spoken in Roman script). Preserve the original SRT format strictly — including the sequence numbers, time codes, and line breaks. Do not omit or change any content. Return only the translated subtitles in plain SRT format without any explanations, code blocks, or additional notes:\n\n${changetext}`;
     }
 
-    const url = `https://capsaiendpoint.openai.azure.com/openai/deployments/gpt-4o-mini/chat/completions?api-version=2024-08-01-preview`;
+
+    const url = `https://cheta-m9rbttyh-eastus2.cognitiveservices.azure.com/openai/deployments/gpt-4.1-mini/chat/completions?api-version=2025-01-01-preview`;
 
     const data = {
         messages: [
@@ -1746,7 +1747,7 @@ async function callGPT4(language, changetext) {
 
     const headers = {
         'Content-Type': 'application/json',
-        'api-key': AZURE_OPENAI_API_KEY,
+        'api-key': AZURE_OPENAI_API_KEY_INTERNATIONAL,
     };
 
     try {
