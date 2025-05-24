@@ -832,6 +832,7 @@ app.post('/api/change-style', upload.single('video'), async (req, res) => {
 
 
 
+
         if (watermarkPath) inputs.push(watermarkPath);
 
         // Handle sound effect inputs and filters only if there are sound effects
@@ -854,23 +855,26 @@ app.post('/api/change-style', upload.single('video'), async (req, res) => {
             if (userdata.usertype === 'free') {
                 if (videoResolution === '16:9') {
                     ffmpegCommand = `ffmpeg ${inputs.map(input => `-i "${input}"`).join(' ')} ${soundEffectInputs} -filter_complex "` +
+                        `[${watermarkStreamIndex}:v]scale=150:70[watermark]; ` +
                         `${soundEffectFilters ? `${soundEffectFilters};` : ''} ` +
                         `${audioMixFilters ? `${audioMixFilters};` : ''} ` +
                         `[${videoStreamIndex}:v]scale=${resWidth}:${resheight}:force_original_aspect_ratio=decrease,pad=${resWidth}:${resheight}:(ow-iw)/2:(oh-ih)/2,setdar=16/9[scaled]; ` +
-                        `[scaled]subtitles="${tempassFile}":force_style='Alignment=2'[outv]" ` +
+                        `[scaled][watermark]overlay=1700:190,subtitles="${tempassFile}":force_style='Alignment=2'[outv]" ` +
                         `-map "[outv]" -map "[audioMix]" -c:v libx264 -c:a aac "${outputFilePath}"`;
                 } else if (videoResolution === '1:1') {
                     ffmpegCommand = `ffmpeg ${inputs.map(input => `-i "${input}"`).join(' ')} ${soundEffectInputs} -filter_complex "` +
+                        `[${watermarkStreamIndex}:v]scale=150:70[watermark]; ` +
                         `${soundEffectFilters ? `${soundEffectFilters};` : ''} ` +
                         `${audioMixFilters ? `${audioMixFilters};` : ''} ` +
                         `[${videoStreamIndex}:v]scale=${resWidth}:${resheight}:force_original_aspect_ratio=decrease,pad=${resWidth}:${resheight}:(ow-iw)/2:(oh-ih)/2,setdar=1/1[scaled]; ` +
-                        `[scaled]subtitles="${tempassFile}":force_style='Alignment=2'[outv]" ` +
+                        `[scaled][watermark]overlay=860:158,subtitles="${tempassFile}":force_style='Alignment=2'[outv]" ` +
                         `-map "[outv]" -map "[audioMix]" -c:v libx264 -c:a aac "${outputFilePath}"`;
                 } else {
                     ffmpegCommand = `ffmpeg ${inputs.map(input => `-i "${input}"`).join(' ')} ${soundEffectInputs} -filter_complex "` +
+                        `[${watermarkStreamIndex}:v]scale=203.2:94.832[watermark]; ` +
                         `${soundEffectFilters ? `${soundEffectFilters};` : ''} ` +
                         `${audioMixFilters ? `${audioMixFilters};` : ''} ` +
-                        `[${videoStreamIndex}:v]subtitles="${tempassFile}":force_style='Alignment=2'[outv]" ` +
+                        `[${videoStreamIndex}:v][watermark]overlay=494:190,subtitles="${tempassFile}":force_style='Alignment=2'[outv]" ` +
                         `-map "[outv]" -map "[audioMix]" -c:v libx264 -c:a aac "${outputFilePath}"`;
                 }
             } else {
@@ -1148,7 +1152,7 @@ app.post("/api/send-welcome-email", (req, res) => {
 </head>
 <body>
   <a href="https://capsai.co/" target="_blank">
-    <img src="https://capsaistore.blob.core.windows.net/capsaiassets/Welcome%20image%20(3).png" alt="Welcome Image">
+    <img src="https://capsaistore.blob.core.windows.net/capsaiassets/Welcome%20image%20(3).png" alt="Welcome to Capsai">
   </a>
 </body>
 </html>
