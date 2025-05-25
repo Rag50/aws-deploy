@@ -855,26 +855,28 @@ app.post('/api/change-style', upload.single('video'), async (req, res) => {
             if (userdata.usertype === 'free') {
                 if (videoResolution === '16:9') {
                     ffmpegCommand = `ffmpeg ${inputs.map(input => `-i "${input}"`).join(' ')} ${soundEffectInputs} -filter_complex "` +
-                        `[${watermarkStreamIndex}:v]scale=150:70[watermark]; ` +
+                        `[${watermarkStreamIndex}:v]scale=120:55[watermark]; ` +
                         `${soundEffectFilters ? `${soundEffectFilters};` : ''} ` +
                         `${audioMixFilters ? `${audioMixFilters};` : ''} ` +
                         `[${videoStreamIndex}:v]scale=${resWidth}:${resheight}:force_original_aspect_ratio=decrease,pad=${resWidth}:${resheight}:(ow-iw)/2:(oh-ih)/2,setdar=16/9[scaled]; ` +
-                        `[scaled][watermark]overlay=1700:190,subtitles="${tempassFile}":force_style='Alignment=2'[outv]" ` +
+                        `[scaled][watermark]overlay=1700:120,subtitles='${tempassFile}':force_style='Alignment=2'[outv]" ` +
                         `-map "[outv]" -map "[audioMix]" -c:v libx264 -c:a aac "${outputFilePath}"`;
+
                 } else if (videoResolution === '1:1') {
                     ffmpegCommand = `ffmpeg ${inputs.map(input => `-i "${input}"`).join(' ')} ${soundEffectInputs} -filter_complex "` +
-                        `[${watermarkStreamIndex}:v]scale=150:70[watermark]; ` +
+                        `[${watermarkStreamIndex}:v]scale=120:55[watermark]; ` +
                         `${soundEffectFilters ? `${soundEffectFilters};` : ''} ` +
                         `${audioMixFilters ? `${audioMixFilters};` : ''} ` +
                         `[${videoStreamIndex}:v]scale=${resWidth}:${resheight}:force_original_aspect_ratio=decrease,pad=${resWidth}:${resheight}:(ow-iw)/2:(oh-ih)/2,setdar=1/1[scaled]; ` +
-                        `[scaled][watermark]overlay=860:158,subtitles="${tempassFile}":force_style='Alignment=2'[outv]" ` +
+                        `[scaled][watermark]overlay=860:100,subtitles='${tempassFile}':force_style='Alignment=2'[outv]" ` +
                         `-map "[outv]" -map "[audioMix]" -c:v libx264 -c:a aac "${outputFilePath}"`;
+
                 } else {
                     ffmpegCommand = `ffmpeg ${inputs.map(input => `-i "${input}"`).join(' ')} ${soundEffectInputs} -filter_complex "` +
-                        `[${watermarkStreamIndex}:v]scale=203.2:94.832[watermark]; ` +
+                        `[${watermarkStreamIndex}:v]scale=120:55[watermark]; ` +
                         `${soundEffectFilters ? `${soundEffectFilters};` : ''} ` +
                         `${audioMixFilters ? `${audioMixFilters};` : ''} ` +
-                        `[${videoStreamIndex}:v][watermark]overlay=494:190,subtitles="${tempassFile}":force_style='Alignment=2'[outv]" ` +
+                        `[${videoStreamIndex}:v][watermark]overlay=494:120,subtitles='${tempassFile}':force_style='Alignment=2'[outv]" ` +
                         `-map "[outv]" -map "[audioMix]" -c:v libx264 -c:a aac "${outputFilePath}"`;
                 }
             } else {
