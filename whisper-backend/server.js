@@ -1136,7 +1136,7 @@ ${transcriptionArray.map(t => t.value).join('\n')}`;
     }
 }
 
-// changes to be made here with new mail 
+// new image update 
 app.post("/api/send-welcome-email", (req, res) => {
     const { email, userName } = req.body;
 
@@ -1470,9 +1470,6 @@ app.post("/api/sendVerificationCode-email-auth", async (req, res) => {
     }
 });
 
-app.post('/api/magic-demo-gcp', upload.single('video'), async (req, res) => {
-
-});
 
 
 app.post("/api/verifyCode-email-auth", async (req, res) => {
