@@ -22,6 +22,11 @@ const nodemailer = require('nodemailer');
 const dotenv = require('dotenv');
 const crypto = require("crypto");
 const { Cashfree } = require("cashfree-pg");
+const DodoPayments = require('dodopayments');
+const dodoClient = new DodoPayments({
+    bearerToken: process.env.DODO_PAYMENTS_API_KEY,
+    environment: process.env.NODE_ENV === 'production' ? 'live_mode' : 'test_mode'
+});
 dotenv.config();
 
 var serviceAccount = require("./caps-85254-firebase-adminsdk-31j3r-0edeb4bd98.json");
@@ -1062,6 +1067,78 @@ app.get("/api/payment", async (req, res) => {
         console.log(error);
     }
 });
+
+
+app.post('/api/dodo-payment', async (req, res) => {
+    try {
+        const { billing, customer, products, currency } = req.body;
+
+      
+        const payment = await dodoClient.payments.create({
+            payment_link: true,
+            currency: currency,
+            billing: {
+                city: billing.city,
+                country: billing.country,
+                state: billing.state,
+                street: billing.street,
+                zipcode: billing.zipcode
+            },
+            customer: {
+                email: customer.email,
+                name: customer.name
+            },
+            product_cart: products.map(product => ({
+                product_id: product.id,
+                quantity: product.quantity
+            }))
+        });
+
+        res.json({ 
+            payment_url: payment.payment_url, 
+            payment_id: payment.payment_id,
+            currency: payment.currency
+        });
+    } catch (error) {
+        console.error('Payment error:', error);
+        res.status(500).json({ 
+            error: 'Failed to create payment',
+            message: error.message 
+        });
+    }
+});
+
+
+app.post('/api/dodo-webhook', async (req, res) => {
+    const signature = req.headers['dodo-signature'];
+    
+    try {
+       
+        const event = dodoClient.webhooks.constructEvent(
+            req.body,
+            signature,
+            process.env.DODO_WEBHOOK_SECRET
+        );
+
+       
+        switch (event.type) {
+            case 'payment.succeeded':
+               
+                await handleSuccessfulPayment(event.data);
+                break;
+            case 'payment.failed':
+                
+                await handleFailedPayment(event.data);
+                break;
+        }
+
+        res.json({ received: true });
+    } catch (error) {
+        console.error('Webhook error:', error);
+        res.status(400).json({ error: 'Webhook signature verification failed' });
+    }
+});
+
 
 app.post("/api/verify", async (req, res) => {
     console.log(req.body);
