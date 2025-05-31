@@ -640,15 +640,31 @@ const storage = multer.diskStorage({
 
 const upload = multer({ storage: storage });
 
+async function uploadToAzure(filePath, customFilename = null) {
+    try {
 
-async function uploadToAzure(filePath) {
-    const blobName = path.basename(filePath);
-    const blockBlobClient = containerClient.getBlockBlobClient(blobName);
-    const uploadBlobResponse = await blockBlobClient.uploadFile(filePath);
-    return {
-        url: blockBlobClient.url,
-        blobName,
-    };
+
+        const blobName = customFilename || path.basename(filePath);
+
+        console.log(`Uploading file: ${filePath} as: ${blobName}`);
+
+        const blockBlobClient = containerClient.getBlockBlobClient(blobName);
+
+       
+        const fileStream = fs.createReadStream(filePath);
+        const uploadBlobResponse = await blockBlobClient.uploadStream(fileStream);
+
+        console.log(`Upload completed. Blob name: ${blobName}`);
+
+        return {
+            url: blockBlobClient.url,
+            blobName: blobName,
+            uploadResponse: uploadBlobResponse
+        };
+    } catch (error) {
+        console.error('Error uploading to Azure:', error);
+        throw error;
+    }
 }
 
 // Helper function to delete file from Azure Blob Storage
@@ -675,9 +691,13 @@ const AZURE_OPENAI_API_KEY_INTERNATIONAL = ''
 app.post('/api/process-video', upload.single('video'), async (req, res) => {
     try {
         const videoFilePath = req.file.path;
+        console.log(videoFilePath);
         const language = req.body.SelectedLang;
         const isoneWord = req.body.WordLimit === 'true';
         const wordLayout = req.body.WordLayout;
+
+        const originalFilename = req.file.originalname;
+
         console.log(isoneWord, "from front");
         let remaningmins = 0;
         const outputPath = `${videoFilePath}_random.mp4`;
@@ -688,7 +708,6 @@ app.post('/api/process-video', upload.single('video'), async (req, res) => {
 
         let srtContent
 
-
         console.log("Ran");
         if (isoneWord) {
             srtContent = generateSRTFromWords(transcription.words);
@@ -696,15 +715,11 @@ app.post('/api/process-video', upload.single('video'), async (req, res) => {
             srtContent = generateSRTNormal(transcription.segments, 4);
         }
 
-
-
-        // console.log(srtContent);
+      
         let outputSrt;
-
 
         const directLanguages = ["English", "Hindi"];
         const supportedLanguages = ["Bengali", "Telugu", "Marathi", "Tamil", "Urdu", "Gujarati", "Kannada", "Punjabi"];
-
 
         if (directLanguages.includes(language) && transcription.language.toLowerCase() === language.toLowerCase()) {
             outputSrt = srtContent;
@@ -715,33 +730,32 @@ app.post('/api/process-video', upload.single('video'), async (req, res) => {
             outputSrt = await callGPT4(language, srtContent);
         }
 
-
-
-        const srtFilePath = path.join(__dirname, 'uploads', `${req.file.filename.replace('.mp4', '')}.srt`);
+       
+        const originalNameWithoutExt = originalFilename.replace(/\.[^/.]+$/, "");
+        const srtFilePath = path.join(__dirname, 'uploads', `${originalNameWithoutExt}.srt`);
         fs.writeFileSync(srtFilePath, outputSrt);
-
 
         const random = processShuffledText(wordLayout, videoFilePath, srtFilePath, outputPath, isoneWord);
         console.log(random, "Scripttttt")
 
-        // Upload video and SRT to azure
-
+       
         let videoUpload;
         if (wordLayout == 'Shuffled text') {
-            videoUpload = await uploadToAzure(outputPath);
+            const processedFilename = `processed_${originalFilename}`;
+            videoUpload = await uploadToAzure(outputPath, processedFilename);
         } else {
-            videoUpload = await uploadToAzure(videoFilePath);
+            videoUpload = await uploadToAzure(videoFilePath, originalFilename);
         }
-        const srtUpload = await uploadToAzure(srtFilePath);
+
+       
+        const srtUpload = await uploadToAzure(srtFilePath, `${originalNameWithoutExt}.srt`);
         console.log(videoUpload, srtUpload)
 
-
-        // fs.unlinkSync(videoFilePath);
+    
         fs.unlinkSync(srtFilePath);
         if (wordLayout == 'Shuffled text') {
             fs.unlinkSync(outputPath);
         }
-
 
         res.json({
             transcription: formatSubtitle(outputSrt),
@@ -750,13 +764,13 @@ app.post('/api/process-video', upload.single('video'), async (req, res) => {
             lang: transcription.language,
             key: videoUpload.blobName,
             srt: srtUpload.url,
+            originalFilename: originalFilename, 
         });
     } catch (error) {
         res.status(500).json({ error: error.message });
     }
 });
 
-// magic link and other feature pushout and new animations and user data script 
 
 app.post('/api/change-style', upload.single('video'), async (req, res) => {
     try {
@@ -855,7 +869,7 @@ app.post('/api/change-style', upload.single('video'), async (req, res) => {
         const outputFilePath = path.join(__dirname, 'uploads', path.basename(videoPath).replace('.mp4', '_output.mp4'));
 
 
-        // 10 min watermark free video and then 10 mins with watemark
+      
         await new Promise((resolve, reject) => {
             if (userdata.usertype === 'free') {
                 if (videoResolution === '16:9') {
@@ -928,7 +942,7 @@ app.post('/api/change-style', upload.single('video'), async (req, res) => {
 
             outputUpload = await uploadToAzure(outputFilePath);
             outputVideoUrl = outputUpload.url;
-            // Schedule deletion based on user type
+           
 
             await db.collection('deletionTasks').add({
                 type: 'azure-blob',
@@ -1111,23 +1125,23 @@ app.post('/api/dodo-payment', async (req, res) => {
 
 app.post('/api/dodo-webhook', async (req, res) => {
     const signature = req.headers['dodo-signature'];
-    
+
     try {
-       
+
         const event = dodoClient.webhooks.constructEvent(
             req.body,
             signature,
             process.env.DODO_WEBHOOK_SECRET
         );
 
-       
+
         switch (event.type) {
             case 'payment.succeeded':
-               
+
                 await handleSuccessfulPayment(event.data);
                 break;
             case 'payment.failed':
-                
+
                 await handleFailedPayment(event.data);
                 break;
         }
