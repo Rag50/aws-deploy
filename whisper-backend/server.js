@@ -23,11 +23,12 @@ const dotenv = require('dotenv');
 const crypto = require("crypto");
 const { Cashfree } = require("cashfree-pg");
 const DodoPayments = require('dodopayments');
+dotenv.config();
+
 const dodoClient = new DodoPayments({
     bearerToken: process.env.DODO_PAYMENTS_API_KEY,
     environment: process.env.NODE_ENV === 'production' ? 'live_mode' : 'test_mode'
 });
-dotenv.config();
 
 var serviceAccount = require("./caps-85254-firebase-adminsdk-31j3r-0edeb4bd98.json");
 
@@ -1085,34 +1086,109 @@ app.get("/api/payment", async (req, res) => {
 
 app.post('/api/dodo-payment', async (req, res) => {
     try {
-        const { billing, customer, products, currency } = req.body;
+        const { billing = {}, customer = {}, plan, currency = 'INR', return_url } = req.body;
+
+        
+        if (!plan) {
+            return res.status(400).json({ 
+                error: 'Missing required fields', 
+                message: 'Plan information is required' 
+            });
+        }
+       
+        const billingInfo = {
+            city: billing.city || 'City',
+            country: billing.country || 'IN',
+            state: billing.state || 'State',
+            street: billing.street || 'Street',
+            zipcode: billing.zipcode || '000000'
+        };
+
+        // Validate customer information
+        if (!customer.email || !customer.name) {
+            return res.status(400).json({ 
+                error: 'Missing required fields', 
+                message: 'Customer email and name are required' 
+            });
+        }
+
+        const planProductMap = {
+            '45': process.env.DODO_PRODUCT_45 || 'pdt_19FXzE9rs0eKqhzJzbkax',
+            '200': process.env.DODO_PRODUCT_200 || 'YOUR_ACTUAL_200RS_PRODUCT_ID_HERE',
+        };
 
       
-        const payment = await dodoClient.payments.create({
-            payment_link: true,
-            currency: currency,
-            billing: {
-                city: billing.city,
-                country: billing.country,
-                state: billing.state,
-                street: billing.street,
-                zipcode: billing.zipcode
-            },
-            customer: {
-                email: customer.email,
-                name: customer.name
-            },
-            product_cart: products.map(product => ({
-                product_id: product.id,
-                quantity: product.quantity
-            }))
-        });
+        if (plan.is_subscription) {
+          
+            if (!plan.id) {
+                return res.status(400).json({ 
+                    error: 'Missing required fields', 
+                    message: 'Subscription plan ID is required' 
+                });
+            }
 
-        res.json({ 
-            payment_url: payment.payment_url, 
-            payment_id: payment.payment_id,
-            currency: payment.currency
-        });
+         
+            const subscription = await dodoClient.subscriptions.create({
+                payment_link: true,
+                billing: billingInfo,
+                customer: {
+                    email: customer.email,
+                    name: customer.name
+                },
+                product_id: plan.id,
+                quantity: 1,
+                return_url: return_url || 'https://capsai.co/success'
+            });
+
+            res.json({ 
+                payment_url: subscription.payment_url, 
+                subscription_id: subscription.subscription_id,
+                currency: currency
+            });
+        } else {
+            
+            if (!plan.amount || isNaN(plan.amount)) {
+                return res.status(400).json({ 
+                    error: 'Missing required fields', 
+                    message: 'Plan amount is required and must be a number' 
+                });
+            }
+
+           
+            const productId = plan.id || planProductMap[plan.amount.toString()];
+            
+            if (!productId) {
+                return res.status(400).json({
+                    error: 'Invalid plan amount',
+                    message: `No product exists for plan amount ${plan.amount}. Available plans: ${Object.keys(planProductMap).join(', ')}`
+                });
+            }
+
+          
+            const payment = await dodoClient.payments.create({
+                payment_link: true,
+                currency: currency,
+                billing: billingInfo,
+                customer: {
+                    email: customer.email,
+                    name: customer.name
+                },
+             
+                product_cart: [
+                    {
+                        product_id: productId,
+                        quantity: 1
+                    }
+                ],
+                description: plan.description || `${plan.amount} ${currency} Plan`
+            });
+
+            res.json({ 
+                payment_url: payment.payment_url, 
+                payment_id: payment.payment_id,
+                currency: currency
+            });
+        }
     } catch (error) {
         console.error('Payment error:', error);
         res.status(500).json({ 

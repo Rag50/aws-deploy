@@ -21,6 +21,7 @@
     "crypto": "^1.0.1",
     "dodopayments": "^1.27.0",
     "dotenv": "^16.4.5",
+    "env": "^0.0.2",
     "express": "^4.19.2",
     "firebase-admin": "^12.3.0",
     "fluent-ffmpeg": "^2.1.3",
