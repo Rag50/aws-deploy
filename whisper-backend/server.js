@@ -23,15 +23,122 @@ const dotenv = require('dotenv');
 const crypto = require("crypto");
 const { Cashfree } = require("cashfree-pg");
 const DodoPayments = require('dodopayments');
+const https = require('https');
 dotenv.config();
 
+// Product ID mapping based on amount (in USD cents)
+const PRODUCT_MAPPING = {
+    99: process.env.DODO_PRODUCT_0_99 || 'prod_0_99_usd',    // $0.99
+    1.99: process.env.DODO_PRODUCT_1_99 || 'pdt_uwqatZU7K1BaqsNeYlOWc',   // $1.99
+    299: process.env.DODO_PRODUCT_2_99 || 'prod_2_99_usd',   // $2.99
+    499: process.env.DODO_PRODUCT_4_99 || 'prod_4_99_usd',   // $4.99
+    999: process.env.DODO_PRODUCT_9_99 || 'prod_9_99_usd',   // $9.99
+    1999: process.env.DODO_PRODUCT_19_99 || 'prod_19_99_usd' // $19.99
+};
+
+// Fallback product ID if no matching amount is found
+const DEFAULT_USD_PRODUCT_ID = process.env.DODO_DEFAULT_PRODUCT || 'prod_default_usd';
+
+/**
+ * Get the appropriate product ID based on the amount
+ * @param {number} amount - The amount in USD (e.g., 1.77 for $1.77)
+ * @returns {string} The product ID to use
+ */
+function getProductIdForAmount(amount) {
+    // Convert amount to cents for comparison
+    const amountInCents = Math.round(amount * 100);
+
+    // Check if we have a direct match
+    if (PRODUCT_MAPPING[amountInCents]) {
+        return PRODUCT_MAPPING[amountInCents];
+    }
+
+    // If no direct match, find the closest lower amount
+    const availableAmounts = Object.keys(PRODUCT_MAPPING).map(Number).sort((a, b) => b - a);
+    const matchingAmount = availableAmounts.find(a => a <= amountInCents);
+
+    return matchingAmount ? PRODUCT_MAPPING[matchingAmount] : DEFAULT_USD_PRODUCT_ID;
+}
+
+// Enhanced HTTP agent configuration
+const httpsAgent = new https.Agent({
+    keepAlive: true,
+    timeout: 30000,
+    rejectUnauthorized: true,
+    keepAliveMsecs: 10000,
+    maxSockets: 100,
+    maxFreeSockets: 10,
+    timeout: 30000
+});
+
+// Initialize Dodo client with enhanced configuration
 const dodoClient = new DodoPayments({
     bearerToken: process.env.DODO_PAYMENTS_API_KEY,
-    environment: process.env.NODE_ENV === 'production' ? 'live_mode' : 'test_mode'
+    environment: process.env.NODE_ENV === 'production' ? 'live_mode' : 'test_mode',
+    httpAgent: httpsAgent,
+    maxRetries: 3,
+    timeout: 30000,
+    // Override the fetch implementation to add better logging
+    fetch: async (url, options) => {
+        console.log('Dodo API Request:', {
+            url,
+            method: options.method,
+            headers: options.headers,
+            body: options.body ? JSON.parse(options.body) : undefined
+        });
+
+        try {
+            const response = await fetch(url, options);
+            const data = await response.json().catch(() => ({}));
+
+            console.log('Dodo API Response:', {
+                status: response.status,
+                statusText: response.statusText,
+                headers: Object.fromEntries(response.headers.entries()),
+                data
+            });
+
+            return {
+                ok: response.ok,
+                status: response.status,
+                statusText: response.statusText,
+                headers: response.headers,
+                json: async () => data,
+                text: async () => JSON.stringify(data)
+            };
+        } catch (error) {
+            console.error('Dodo API Request Failed:', error);
+            throw error;
+        }
+    }
+});
+
+// Test Dodo API connectivity
+async function testDodoConnection() {
+    try {
+        console.log('Testing connection to Dodo Payments API...');
+        const response = await axios.get('https://test.dodopayments.com/health', {
+            httpsAgent: new https.Agent({ rejectUnauthorized: false }),
+            timeout: 10000
+        });
+        console.log('Dodo API health check:', response.status, response.statusText);
+        return true;
+    } catch (error) {
+        console.error('Dodo API connection test failed:', {
+            message: error.message,
+            code: error.code,
+            stack: error.stack
+        });
+        return false;
+    }
+}
+
+// Test connection on startup
+testDodoConnection().then(isConnected => {
+    console.log('Dodo API connection test result:', isConnected ? 'SUCCESS' : 'FAILED');
 });
 
 var serviceAccount = require("./caps-85254-firebase-adminsdk-31j3r-0edeb4bd98.json");
-
 
 admin.initializeApp({
     credential: admin.credential.cert(serviceAccount)
@@ -651,7 +758,7 @@ async function uploadToAzure(filePath, customFilename = null) {
 
         const blockBlobClient = containerClient.getBlockBlobClient(blobName);
 
-       
+
         const fileStream = fs.createReadStream(filePath);
         const uploadBlobResponse = await blockBlobClient.uploadStream(fileStream);
 
@@ -716,7 +823,7 @@ app.post('/api/process-video', upload.single('video'), async (req, res) => {
             srtContent = generateSRTNormal(transcription.segments, 4);
         }
 
-      
+
         let outputSrt;
 
         const directLanguages = ["English", "Hindi"];
@@ -731,7 +838,7 @@ app.post('/api/process-video', upload.single('video'), async (req, res) => {
             outputSrt = await callGPT4(language, srtContent);
         }
 
-       
+
         const originalNameWithoutExt = originalFilename.replace(/\.[^/.]+$/, "");
         const srtFilePath = path.join(__dirname, 'uploads', `${originalNameWithoutExt}.srt`);
         fs.writeFileSync(srtFilePath, outputSrt);
@@ -739,7 +846,7 @@ app.post('/api/process-video', upload.single('video'), async (req, res) => {
         const random = processShuffledText(wordLayout, videoFilePath, srtFilePath, outputPath, isoneWord);
         console.log(random, "Scripttttt")
 
-       
+
         let videoUpload;
         if (wordLayout == 'Shuffled text') {
             const processedFilename = `processed_${originalFilename}`;
@@ -748,11 +855,11 @@ app.post('/api/process-video', upload.single('video'), async (req, res) => {
             videoUpload = await uploadToAzure(videoFilePath, originalFilename);
         }
 
-       
+
         const srtUpload = await uploadToAzure(srtFilePath, `${originalNameWithoutExt}.srt`);
         console.log(videoUpload, srtUpload)
 
-    
+
         fs.unlinkSync(srtFilePath);
         if (wordLayout == 'Shuffled text') {
             fs.unlinkSync(outputPath);
@@ -765,7 +872,7 @@ app.post('/api/process-video', upload.single('video'), async (req, res) => {
             lang: transcription.language,
             key: videoUpload.blobName,
             srt: srtUpload.url,
-            originalFilename: originalFilename, 
+            originalFilename: originalFilename,
         });
     } catch (error) {
         res.status(500).json({ error: error.message });
@@ -870,7 +977,7 @@ app.post('/api/change-style', upload.single('video'), async (req, res) => {
         const outputFilePath = path.join(__dirname, 'uploads', path.basename(videoPath).replace('.mp4', '_output.mp4'));
 
 
-      
+
         await new Promise((resolve, reject) => {
             if (userdata.usertype === 'free') {
                 if (videoResolution === '16:9') {
@@ -943,7 +1050,7 @@ app.post('/api/change-style', upload.single('video'), async (req, res) => {
 
             outputUpload = await uploadToAzure(outputFilePath);
             outputVideoUrl = outputUpload.url;
-           
+
 
             await db.collection('deletionTasks').add({
                 type: 'azure-blob',
@@ -1086,148 +1193,115 @@ app.get("/api/payment", async (req, res) => {
 
 app.post('/api/dodo-payment', async (req, res) => {
     try {
-        const { billing = {}, customer = {}, plan, currency = 'INR', return_url } = req.body;
+        const {
+            billing = {},
+            customer = {},
+            amount,
+            description,
+            return_url,
+        } = req.body;
 
-        
-        if (!plan) {
-            return res.status(400).json({ 
-                error: 'Missing required fields', 
-                message: 'Plan information is required' 
+        // Validate required fields
+        if (!amount || isNaN(amount)) {
+            return res.status(400).json({
+                error: 'Invalid amount',
+                message: 'Amount is required and must be a number',
             });
         }
-       
+
+        if (!customer.email || !customer.name) {
+            return res.status(400).json({
+                error: 'Missing customer information',
+                message: 'Customer email and name are required',
+            });
+        }
+
+        // Set default billing information if not provided
         const billingInfo = {
             city: billing.city || 'City',
-            country: billing.country || 'IN',
+            country: billing.country || 'US',
             state: billing.state || 'State',
             street: billing.street || 'Street',
-            zipcode: billing.zipcode || '000000'
+            zipcode: billing.zipcode || '000000',
         };
 
-        // Validate customer information
-        if (!customer.email || !customer.name) {
-            return res.status(400).json({ 
-                error: 'Missing required fields', 
-                message: 'Customer email and name are required' 
-            });
-        }
+        const productId = getProductIdForAmount(amount);
 
-        const planProductMap = {
-            '45': process.env.DODO_PRODUCT_45 || 'pdt_19FXzE9rs0eKqhzJzbkax',
-            '200': process.env.DODO_PRODUCT_200 || 'YOUR_ACTUAL_200RS_PRODUCT_ID_HERE',
+        const successUrl = `${return_url}`;
+        const cancelUrl = `${return_url}`;
+
+
+        // Prepare payment data
+        const paymentData = {
+            payment_link: true,
+            currency: 'USD',
+            billing: billingInfo,
+            customer: {
+                email: customer.email,
+                name: customer.name,
+            },
+            product_cart: [
+                {
+                    product_id: productId, // Replace with your actual product ID
+                    quantity: 1,
+                    price: Math.round(amount * 100), // Convert to cents
+                },
+            ],
+            description: description || `Payment of $${amount}`,
+            successUrl: successUrl,
+            cancel_url: cancelUrl,
         };
 
-      
-        if (plan.is_subscription) {
-          
-            if (!plan.id) {
-                return res.status(400).json({ 
-                    error: 'Missing required fields', 
-                    message: 'Subscription plan ID is required' 
-                });
-            }
 
-         
-            const subscription = await dodoClient.subscriptions.create({
-                payment_link: true,
-                billing: billingInfo,
-                customer: {
-                    email: customer.email,
-                    name: customer.name
-                },
-                product_id: plan.id,
-                quantity: 1,
-                return_url: return_url || 'https://capsai.co/success'
-            });
+        console.log(successUrl);
 
-            res.json({ 
-                payment_url: subscription.payment_url, 
-                subscription_id: subscription.subscription_id,
-                currency: currency
-            });
-        } else {
-            
-            if (!plan.amount || isNaN(plan.amount)) {
-                return res.status(400).json({ 
-                    error: 'Missing required fields', 
-                    message: 'Plan amount is required and must be a number' 
-                });
-            }
+        // Create payment
+        const payment = await dodoClient.payments.create(paymentData);
 
-           
-            const productId = plan.id || planProductMap[plan.amount.toString()];
-            
-            if (!productId) {
-                return res.status(400).json({
-                    error: 'Invalid plan amount',
-                    message: `No product exists for plan amount ${plan.amount}. Available plans: ${Object.keys(planProductMap).join(', ')}`
-                });
-            }
-
-          
-            const payment = await dodoClient.payments.create({
-                payment_link: true,
-                currency: currency,
-                billing: billingInfo,
-                customer: {
-                    email: customer.email,
-                    name: customer.name
-                },
-             
-                product_cart: [
-                    {
-                        product_id: productId,
-                        quantity: 1
-                    }
-                ],
-                description: plan.description || `${plan.amount} ${currency} Plan`
-            });
-
-            res.json({ 
-                payment_url: payment.payment_url, 
-                payment_id: payment.payment_id,
-                currency: currency
-            });
+        if (!payment.payment_link) {
+            throw new Error('Failed to generate payment link');
         }
+
+
+
+        res.json({
+            payment_url: payment.payment_link,
+            payment_id: payment.payment_id,
+            currency: 'USD',
+            success_url: successUrl,
+            cancel_url: cancelUrl,
+        });
     } catch (error) {
-        console.error('Payment error:', error);
-        res.status(500).json({ 
-            error: 'Failed to create payment',
-            message: error.message 
+        console.error('Payment processing error:', error);
+        res.status(500).json({
+            error: 'Payment processing failed',
+            message: error.message || 'An unknown error occurred',
         });
     }
 });
 
 
-app.post('/api/dodo-webhook', async (req, res) => {
-    const signature = req.headers['dodo-signature'];
+
+
+app.post("/api/verify-dodo-payment", async (req, res) => {
+    const { paymentId } = req.body;
 
     try {
+        const payment = await dodoClient.payments.retrieve(paymentId);
 
-        const event = dodoClient.webhooks.constructEvent(
-            req.body,
-            signature,
-            process.env.DODO_WEBHOOK_SECRET
-        );
-
-
-        switch (event.type) {
-            case 'payment.succeeded':
-
-                await handleSuccessfulPayment(event.data);
-                break;
-            case 'payment.failed':
-
-                await handleFailedPayment(event.data);
-                break;
+        if (payment.status === "succeeded") {
+            return res.json({ status: "success" });
+        } else {
+            return res.json({ status: "pending" });
         }
-
-        res.json({ received: true });
     } catch (error) {
-        console.error('Webhook error:', error);
-        res.status(400).json({ error: 'Webhook signature verification failed' });
+        console.error("Verification error:", error.message);
+        return res.status(500).json({ error: "Failed to verify payment" });
     }
 });
+
+
+
 
 
 app.post("/api/verify", async (req, res) => {
