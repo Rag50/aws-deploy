@@ -1283,22 +1283,22 @@ app.post('/api/dodo-payment', async (req, res) => {
 
 
 
-app.post("/api/verify-dodo-payment", async (req, res) => {
-    const { paymentId } = req.body;
+// app.post("/api/verify-dodo-payment", async (req, res) => {
+//     const { paymentId } = req.body;
 
-    try {
-        const payment = await dodoClient.payments.retrieve(paymentId);
+//     try {
+//         const payment = await dodoClient.payments.retrieve(paymentId);
 
-        if (payment.status === "succeeded") {
-            return res.json({ status: "success" });
-        } else {
-            return res.json({ status: "pending" });
-        }
-    } catch (error) {
-        console.error("Verification error:", error.message);
-        return res.status(500).json({ error: "Failed to verify payment" });
-    }
-});
+//         if (payment.status === "succeeded") {
+//             return res.json({ status: "success" });
+//         } else {
+//             return res.json({ status: "pending" });
+//         }
+//     } catch (error) {
+//         console.error("Verification error:", error.message);
+//         return res.status(500).json({ error: "Failed to verify payment" });
+//     }
+// });
 
 
 
