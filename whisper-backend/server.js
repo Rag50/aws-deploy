@@ -28,12 +28,7 @@ dotenv.config();
 
 // Product ID mapping based on amount (in USD cents)
 const PRODUCT_MAPPING = {
-    99: process.env.DODO_PRODUCT_0_99 || 'prod_0_99_usd',    // $0.99
-    1.99: process.env.DODO_PRODUCT_1_99 || 'pdt_uwqatZU7K1BaqsNeYlOWc',   // $1.99
-    299: process.env.DODO_PRODUCT_2_99 || 'prod_2_99_usd',   // $2.99
-    499: process.env.DODO_PRODUCT_4_99 || 'prod_4_99_usd',   // $4.99
-    999: process.env.DODO_PRODUCT_9_99 || 'prod_9_99_usd',   // $9.99
-    1999: process.env.DODO_PRODUCT_19_99 || 'prod_19_99_usd' // $19.99
+    1.99: process.env.DODO_PRODUCT_1_99 || 'pdt_uwqatZU7K1BaqsNeYlOWc',   
 };
 
 // Fallback product ID if no matching amount is found
@@ -1242,13 +1237,13 @@ app.post('/api/dodo-payment', async (req, res) => {
             },
             product_cart: [
                 {
-                    product_id: productId, // Replace with your actual product ID
+                    product_id: productId, 
                     quantity: 1,
-                    price: Math.round(amount * 100), // Convert to cents
+                    price: Math.round(amount * 100), 
                 },
             ],
             description: description || `Payment of $${amount}`,
-            successUrl: successUrl,
+            return_url: return_url,
             cancel_url: cancelUrl,
         };
 
@@ -1280,9 +1275,33 @@ app.post('/api/dodo-payment', async (req, res) => {
     }
 });
 
+app.get('/api/verify-dodo-payment', async (req, res) => {
+    const { payment_id } = req.query;
 
+    if (!payment_id) {
+        return res.status(400).json({ error: 'Missing payment_id' });
+    }
 
+    try {
+        const payment = await dodoClient.payments.retrieve(payment_id);
 
+        if (payment.status !== 'succeeded') {
+            return res.status(400).json({ error: 'Payment not successful', status: payment.status });
+        }
+
+        return res.json({
+            success: true,
+            payment: {
+                id: payment.payment_id,
+                amount: payment.total_amount,
+                currency: payment.currency,
+                status: payment.status,
+            }
+        });
+    } catch (err) {
+        console.log(err)
+    }
+});
 
 
 
