@@ -28,11 +28,19 @@ dotenv.config();
 
 // Product ID mapping based on amount (in USD cents)
 const PRODUCT_MAPPING = {
-    1.99: process.env.DODO_PRODUCT_1_99 || 'pdt_uwqatZU7K1BaqsNeYlOWc',   
+    1.99: 'pdt_uwqatZU7K1BaqsNeYlOWc',
+    3.99: 'pdt_J3WoHFbvVLoONYIIWteT5',
+    5.99: 'pdt_VCCzkntjz5GOZBx8DQZuo',
+    7.99: 'pdt_UK6liWZ39h9QEaPeAu9vE',
+    9.99: 'pdt_fIVAjFQwoDzqYmaE4zHop',
+    11.99: 'pdt_zZosDjr2HYH6bw69b9Unt',
+    14.99: 'pdt_reRUcid3GTNyrR0guxszQ',
+    17.99: 'pdt_RBxDwHIY7AerKbk55qVUM',
+    20.00: 'pdt_FH53QV66vuRKYdLX99yjF'
 };
 
 // Fallback product ID if no matching amount is found
-const DEFAULT_USD_PRODUCT_ID = process.env.DODO_DEFAULT_PRODUCT || 'prod_default_usd';
+const DEFAULT_USD_PRODUCT_ID = process.env.DODO_DEFAULT_PRODUCT || 'pdt_uwqatZU7K1BaqsNeYlOWc';
 
 /**
  * Get the appropriate product ID based on the amount
@@ -1237,9 +1245,9 @@ app.post('/api/dodo-payment', async (req, res) => {
             },
             product_cart: [
                 {
-                    product_id: productId, 
+                    product_id: productId,
                     quantity: 1,
-                    price: Math.round(amount * 100), 
+                    price: Math.round(amount * 100),
                 },
             ],
             description: description || `Payment of $${amount}`,
