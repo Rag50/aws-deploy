@@ -26,7 +26,7 @@ const DodoPayments = require('dodopayments');
 const https = require('https');
 dotenv.config();
 
-// Product ID mapping based on amount (in USD cents)
+// live setup 
 const PRODUCT_MAPPING = {
     1.99: 'pdt_uwqatZU7K1BaqsNeYlOWc',
     3.99: 'pdt_J3WoHFbvVLoONYIIWteT5',
