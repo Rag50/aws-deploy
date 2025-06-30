@@ -796,7 +796,7 @@ const transporter = nodemailer.createTransport({
 });
 
 
-const AZURE_OPENAI_API_KEY = '';
+const AZURE_OPENAI_API_KEY = ''
 const AZURE_OPENAI_API_KEY_INTERNATIONAL = ''
 
 app.post('/api/process-video', upload.single('video'), async (req, res) => {
@@ -832,11 +832,11 @@ app.post('/api/process-video', upload.single('video'), async (req, res) => {
         const directLanguages = ["English", "Hindi"];
         const supportedLanguages = ["Bengali", "Telugu", "Marathi", "Tamil", "Urdu", "Gujarati", "Kannada", "Punjabi"];
 
-        if (directLanguages.includes(language) && transcription.language.toLowerCase() === language.toLowerCase()) {
-            outputSrt = srtContent;
-        } else if (supportedLanguages.includes(language)) {
+        if (transcription.language.toLowerCase() === language.toLowerCase()) {
+            // If the transcription is already in the selected language, use as is
             outputSrt = srtContent;
         } else {
+            // Otherwise, always call GPT-4 for translation
             console.log('Called');
             outputSrt = await callGPT4(language, srtContent);
         }
@@ -1660,13 +1660,13 @@ footer {
                 <li>Flexible Validity: Subtitle your content at your own pace</li>
                 <li>Tailored Minutes: Plans that match your content needs</li>
             </ul>
-            <p>Check out the details below and find the plan that’s right for you:</p>
+            <p>Check out the details below and find the plan that's right for you:</p>
             <ul class="pricing-list">
                 <li>Rs 29 Plan: 20 minutes, 20 days validity</li>
                 <li>Rs 99 Plan: 70 minutes, 30 days validity</li>
                 <li>Rs 199 Plan: 150 minutes, 45 days validity</li>
             </ul>
-            <p>✨ Don’t miss out on making your content shine with perfect subtitles! Start Subtitling Today!</p>
+            <p>✨ Don't miss out on making your content shine with perfect subtitles! Start Subtitling Today!</p>
             <a href="https://capsai.co/pricing" class="btn-explore">Explore now</a>
         </div>
     </section>
@@ -1705,49 +1705,62 @@ footer {
 
 app.post("/api/sendVerificationCode-email-auth", async (req, res) => {
     const { email } = req.body;
+  
 
     if (!email) {
-        return res.status(400).json({ message: "Email is required" });
+      return res.status(400).json({ message: "Email is required" });
     }
-
+  
+   
     const verificationCode = Math.floor(1000 + Math.random() * 9000);
-
+  
     try {
-        // Save the code to Firestore
-        await db.collection("verificationCodes").doc(email).set({
-            code: verificationCode,
-            expiresAt: Date.now() + 1 * 60 * 1000,
+      await db
+        .collection("verificationCodes")
+        .doc(email)
+        .set({
+          code: verificationCode,
+          expiresAt: Date.now() + 60 * 1000, 
         });
+  
+      
+      const mailOptions = {
+        from: '"Capsai" <ai.editor@capsai.co>',
+        to: email,
+        subject: "Your Verification Code",
+        html: `
+          <!DOCTYPE html>
+          <html lang="en">
+          <head>
+            <meta charset="UTF-8" />
+            <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+            <title>Verification Code</title>
+            <style>
+              html,body{margin:0;padding:0;}
+              .container{display:flex;align-items:center;justify-content:center;min-height:100vh;}
+            .code-box{background:#f3f0fc;padding:18px 24px;border-radius:14px;font:600 26px/1 monospace;letter-spacing:12px;color:#1a1a1a;}
+          </style>
+        </head>
+        <body>
+          <div class="container">
+            <div class="code-box">${verificationCode}</div>
+          </div>
+        </body>
+        </html>
+      `,
+    };
 
+    // nodemailer v6+ returns a Promise if no callback is supplied
+    await transporter.sendMail(mailOptions);
 
-        const mailOptions = {
-            from: '"Capsai" <ai.editor@capsai.co>',
-            to: email,
-            subject: "Your Verification Code",
-            html: `
-            
-
-          `,
-        };
-
-
-
-
-        transporter.sendMail(mailOptions, (error, info) => {
-            if (error) {
-                console.log(error);
-                res.status(500).send('Error sending email');
-            } else {
-                console.log('Email sent: ' + info.response);
-                res.status(200).send('Email sent successfully');
-            }
-        });
-
-        res.status(200).json({ message: "Verification code sent" });
-    } catch (error) {
-        console.error("Error sending verification code:", error);
-        res.status(500).json({ message: "Failed to send email", error: error.message });
-    }
+    // 4️⃣ Single success response --------------------------------------------
+    return res.status(200).json({ message: "Verification code sent" });
+  } catch (err) {
+    console.error("Error sending verification code:", err);
+    return res
+      .status(500)
+      .json({ message: "Failed to send e-mail", error: err.message });
+  }
 });
 
 
@@ -2010,15 +2023,31 @@ function formatTime(seconds) {
 async function callGPT4(language, changetext) {
     let prompt;
 
-
     if (language === 'Hindi') {
         prompt = `You are a professional subtitle translator. Convert the following subtitles to Hindi using pure Devanagari script. Maintain the original SRT formatting strictly — including the sequence numbers, time codes, and line breaks. Do not omit or change any content. Return only the translated subtitles in plain SRT format without any explanations, code blocks, or additional notes:\n\n${changetext}`;
     } else if (language === 'English') {
         prompt = `You are a professional subtitle translator. Convert the following subtitles to English. Maintain the original SRT formatting strictly — including the sequence numbers, time codes, and line breaks. Do not omit or change any content. Return only the translated subtitles in plain SRT format without any explanations, code blocks, or additional notes:\n\n${changetext}`;
-    } else {
+    } else if (language === 'Urdu') {
+        prompt = `You are a professional subtitle translator. Convert the following subtitles to Urdu using pure Urdu script. Maintain the original SRT formatting strictly — including the sequence numbers, time codes, and line breaks. Do not omit or change any content. Return only the translated subtitles in plain SRT format without any explanations, code blocks, or additional notes:\n\n${changetext}`;
+    } else if (language === 'Bengali') {
+        prompt = `You are a professional subtitle translator. Convert the following subtitles to Bengali using pure Bengali script. Maintain the original SRT formatting strictly — including the sequence numbers, time codes, and line breaks. Do not omit or change any content. Return only the translated subtitles in plain SRT format without any explanations, code blocks, or additional notes:\n\n${changetext}`;
+    } else if (language === 'Telugu') {
+        prompt = `You are a professional subtitle translator. Convert the following subtitles to Telugu using pure Telugu script. Maintain the original SRT formatting strictly — including the sequence numbers, time codes, and line breaks. Do not omit or change any content. Return only the translated subtitles in plain SRT format without any explanations, code blocks, or additional notes:\n\n${changetext}`;
+    } else if (language === 'Marathi') {
+        prompt = `You are a professional subtitle translator. Convert the following subtitles to Marathi using pure Marathi script. Maintain the original SRT formatting strictly — including the sequence numbers, time codes, and line breaks. Do not omit or change any content. Return only the translated subtitles in plain SRT format without any explanations, code blocks, or additional notes:\n\n${changetext}`;
+    } else if (language === 'Tamil') {
+        prompt = `You are a professional subtitle translator. Convert the following subtitles to Tamil using pure Tamil script. Maintain the original SRT formatting strictly — including the sequence numbers, time codes, and line breaks. Do not omit or change any content. Return only the translated subtitles in plain SRT format without any explanations, code blocks, or additional notes:\n\n${changetext}`;
+    } else if (language === 'Gujarati') {
+        prompt = `You are a professional subtitle translator. Convert the following subtitles to Gujarati using pure Gujarati script. Maintain the original SRT formatting strictly — including the sequence numbers, time codes, and line breaks. Do not omit or change any content. Return only the translated subtitles in plain SRT format without any explanations, code blocks, or additional notes:\n\n${changetext}`;
+    } else if (language === 'Kannada') {
+        prompt = `You are a professional subtitle translator. Convert the following subtitles to Kannada using pure Kannada script. Maintain the original SRT formatting strictly — including the sequence numbers, time codes, and line breaks. Do not omit or change any content. Return only the translated subtitles in plain SRT format without any explanations, code blocks, or additional notes:\n\n${changetext}`;
+    } else if (language === 'Punjabi') {
+        prompt = `You are a professional subtitle translator. Convert the following subtitles to Punjabi using pure Gurmukhi script. Maintain the original SRT formatting strictly — including the sequence numbers, time codes, and line breaks. Do not omit or change any content. Return only the translated subtitles in plain SRT format without any explanations, code blocks, or additional notes:\n\n${changetext}`;
+    } else if (language === 'Hinglish') {
         prompt = `You are a professional subtitle translator. Convert the following Hindi subtitles to Hinglish (Hindi spoken in Roman script). Preserve the original SRT format strictly — including the sequence numbers, time codes, and line breaks. Do not omit or change any content. Return only the translated subtitles in plain SRT format without any explanations, code blocks, or additional notes:\n\n${changetext}`;
+    } else {
+        prompt = `You are a professional subtitle translator. Convert the following subtitles to ${language}. Maintain the original SRT formatting strictly — including the sequence numbers, time codes, and line breaks. Do not omit or change any content. Return only the translated subtitles in plain SRT format without any explanations, code blocks, or additional notes:\n\n${changetext}`;
     }
-
 
     const url = `https://cheta-m9rbttyh-eastus2.cognitiveservices.azure.com/openai/deployments/gpt-4.1-mini/chat/completions?api-version=2025-01-01-preview`;
 
