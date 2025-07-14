@@ -141,7 +141,7 @@ testDodoConnection().then(isConnected => {
     console.log('Dodo API connection test result:', isConnected ? 'SUCCESS' : 'FAILED');
 });
 
-var serviceAccount = require("./caps-85254-firebase-adminsdk-31j3r-0edeb4bd98.json");
+var serviceAccount = require("./caps-85254-c5d3e9cf206a.json");
 
 admin.initializeApp({
     credential: admin.credential.cert(serviceAccount)
