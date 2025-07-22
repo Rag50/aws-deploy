@@ -24,8 +24,12 @@ const crypto = require("crypto");
 const { Cashfree } = require("cashfree-pg");
 const DodoPayments = require('dodopayments');
 const https = require('https');
+const RemotionVideoService = require('./remotion-service');
 dotenv.config();
-// new branch 
+
+// Initialize Remotion service
+const remotionService = new RemotionVideoService();
+
 // live setup 
 const PRODUCT_MAPPING = {
     1.99: 'pdt_uwqatZU7K1BaqsNeYlOWc',
@@ -154,6 +158,15 @@ const db = getFirestore();
 const app = express();
 app.use(cors());
 app.use(express.json());
+
+// Serve static files from azuredown directory for Remotion
+app.use('/azuredown', express.static(path.join(__dirname, 'azuredown')));
+
+// Serve static files from remotion/public directory for Remotion video files
+app.use('/', express.static(path.join(__dirname, 'remotion', 'public')));
+
+// Serve static files from public directory for video files
+app.use('/public', express.static(path.join(__dirname, 'public')));
 
 
 
@@ -2485,5 +2498,269 @@ function parseASS(file, emojiMapping, outputPath) {
     return { subtitles, modifiedLines };
 }
 
+
+
+
+// New Remotion-based video processing endpoint
+app.post('/api/change-style-remotion', upload.single('video'), async (req, res) => {
+    try {
+        if (req.body.deletion) {
+            // Handle deletion logic (same as original)
+            if (req.get('X-CloudScheduler') !== 'true') {
+                console.error('Unauthorized deletion attempt');
+                return res.status(403).json({ error: 'Unauthorized' });
+            }
+
+            const receivedSignature = req.get('X-Signature');
+            const expectedSignature = crypto
+                .createHmac('sha256', process.env.SCHEDULER_SECRET)
+                .update(JSON.stringify(req.body))
+                .digest('hex');
+
+            if (receivedSignature !== expectedSignature) {
+                console.error('Invalid signature:', { receivedSignature, expectedSignature });
+                return res.status(403).json({ error: 'Invalid signature' });
+            }
+
+            if (req.body.deleteType === 'azure-blob') {
+                await deleteFromAzure(req.body.containerName, req.body.blobName);
+                console.log(`Deleted Azure blob: ${req.body.blobName}`);
+            }
+            else if (req.body.deleteType === 'firestore-doc') {
+                const docRef = admin.firestore().doc(req.body.docPath);
+                await docRef.delete();
+                console.log(`Deleted Firestore document: ${req.body.docPath}`);
+            }
+
+            return res.status(204).end();
+        }
+
+        const { inputVideo, font, color, xPosition, yPosition, srtUrl, Fontsize, userdata, uid, save, keyS3, transcriptions, isOneword, videoResolution, soundEffects } = req.body;
+        
+        if (!inputVideo || !font || !color || !xPosition || !yPosition || !srtUrl || !Fontsize || !userdata || !uid) {
+            return res.status(400).json({ error: 'Missing required fields in the request body' });
+        }
+
+        const watermarkPath = path.join(__dirname, 'watermarks', 'watermark.png');
+        const videoPath = inputVideo;
+        
+        // Process subtitles for Remotion
+        const processedSubtitles = remotionService.processSubtitles(transcriptions, isOneword);
+        
+        // Process sound effects for Remotion
+        const processedSoundEffects = remotionService.processSoundEffects(soundEffects || []);
+
+        // Set up output path
+        const outputFilePath = path.join(__dirname, 'uploads', `remotion_${Date.now()}.mp4`);
+
+        // Calculate remaining minutes
+        let remainingMins = 0;
+        const videoDuration = await getVideoDuration(videoPath);
+
+        if (userdata.usertype === 'free') {
+            if (videoDuration > 3) {
+                return res.status(400).json({ error: 'Video length exceeds 3 minutes limit for free users' });
+            }
+            remainingMins = userdata.videomins - videoDuration;
+        } else {
+            remainingMins = userdata.videomins - videoDuration;
+        }
+
+        // Render video with Remotion
+        console.log('Starting Remotion video processing...');
+        const renderResult = await remotionService.renderVideo({
+            videoSrc: videoPath,
+            subtitles: processedSubtitles,
+            font: {
+                fontFamily: font.fontFamily || 'Arial',
+                fontSize: parseInt(font.fontSize) || 32, // Increased default size
+                color: color,
+                fontWeight: font.fontWeight || 'normal',
+                fontStyle: font.fontStyle || 'normal',
+                textShadow: font.textShadow,
+                webkitTextStrokeWidth: font.webkitTextStrokeWidth,
+                webkitTextStrokeColor: font.webkitTextStrokeColor,
+                letterSpacing: font.letterSpacing,
+                padding: font.padding,
+            },
+            watermark: userdata.usertype === 'free' ? watermarkPath : null,
+            soundEffects: processedSoundEffects,
+            userType: userdata.usertype,
+            videoResolution: videoResolution,
+            yPosition: yPosition,
+            outputPath: outputFilePath,
+            fps: 24, // Optimized for smooth rendering
+            quality: 75, // Balanced quality for performance
+        });
+
+        if (!renderResult.success) {
+            throw new Error('Remotion rendering failed');
+        }
+
+        // Upload to Azure
+        let outputUpload;
+        let outputVideoUrl;
+
+        if (save) {
+            outputUpload = await uploadToAzure(outputFilePath);
+            outputVideoUrl = outputUpload.url;
+
+            // Set up deletion tasks
+            await db.collection('deletionTasks').add({
+                type: 'azure-blob',
+                containerName: 'capsuservideos',
+                blobName: keyS3,
+                deleteAt: admin.firestore.Timestamp.fromDate(
+                    new Date(Date.now() + (userdata.usertype === 'free' ? 15 : 20) * 60000)
+                )
+            });
+
+            await db.collection('deletionTasks').add({
+                type: 'azure-blob',
+                containerName: 'capsuservideos',
+                blobName: outputUpload.blobName,
+                deleteAt: admin.firestore.Timestamp.fromDate(
+                    new Date(Date.now() + (userdata.usertype === 'free' ? 15 : 20) * 60000)
+                )
+            });
+
+            // Save to Firestore
+            const newDocRef = await db.collection('users').doc(uid).collection('videos').add({
+                videoUrl: videoPath,
+                srt: srtUrl,
+                fontadded: font,
+                createdAt: admin.firestore.FieldValue.serverTimestamp(),
+                key: keyS3,
+                transcriptions: transcriptions,
+                processedWith: 'remotion'
+            });
+
+            await db.collection('deletionTasks').add({
+                type: 'firestore-doc',
+                docPath: `users/${uid}/videos/${newDocRef.id}`,
+                deleteAt: admin.firestore.Timestamp.fromDate(
+                    new Date(Date.now() + (userdata.usertype === 'free' ? 15 : 20) * 60000))
+            });
+        } else {
+            outputUpload = await uploadToAzure(outputFilePath);
+            outputVideoUrl = outputUpload.url;
+        }
+
+        // Update user video minutes
+        const userRef = db.collection('users').doc(uid);
+        const exact = remainingMins <= 0 ? 0 : remainingMins.toFixed(1);
+        
+        await userRef.update({
+            videomins: exact,
+        });
+
+        // Clean up temporary files
+        if (fs.existsSync(outputFilePath)) {
+            fs.unlinkSync(outputFilePath);
+        }
+
+        console.log('Remotion video processing completed successfully');
+        res.json({ 
+            videoUrl: outputVideoUrl,
+            processedWith: 'remotion',
+            renderTime: renderResult.renderTime,
+            success: true
+        });
+
+    } catch (error) {
+        console.error('Error in Remotion video processing:', error);
+        res.status(500).json({ 
+            error: error.message,
+            processedWith: 'remotion',
+            success: false
+        });
+    }
+});
+
+// Test endpoint for Remotion service
+app.post('/api/test-remotion', async (req, res) => {
+  let remotionService;
+  
+  try {
+    console.log('Testing Remotion service...');
+    
+    // Test with a real Azure URL to verify download functionality
+    const testData = {
+      videoSrc: req.body.videoUrl || null, // Allow testing with real URLs
+      subtitles: [
+        {
+          id: 1,
+          timeStart: "00:00:00,000",
+          timeEnd: "00:00:03,000",
+          value: "Hello World! 🎉"
+        },
+        {
+          id: 2,
+          timeStart: "00:00:03,000", 
+          timeEnd: "00:00:06,000",
+          value: "This is a test subtitle! 🚀"
+        }
+      ],
+      font: {
+        fontFamily: 'Arial',
+        fontSize: 56, // Increased size for better visibility
+        color: '#ffffff',
+        fontWeight: 'bold',
+        textShadow: '2px 2px 4px rgba(0,0,0,0.8)'
+      },
+      watermark: null,
+      soundEffects: [],
+      userType: 'free',
+      videoResolution: '16:9',
+      yPosition: 100
+    };
+    
+    const outputPath = path.join(__dirname, 'out', `test-${Date.now()}.mp4`);
+    
+    remotionService = new RemotionVideoService();
+    
+    // Clean up old downloads first
+    await remotionService.cleanupOldDownloads();
+    
+    const result = await remotionService.renderVideo({
+      ...testData,
+      outputPath,
+      fps: 24, // Optimized for smooth rendering
+      quality: 75, // Balanced quality for performance
+    });
+    
+    console.log('Remotion test completed successfully');
+    
+    // Clean up the downloaded video file if it exists
+    if (result.downloadedVideoPath) {
+      remotionService.cleanupDownloadedVideo(result.downloadedVideoPath);
+    }
+    
+    res.json({ 
+      success: true, 
+      message: 'Remotion test completed',
+      outputPath: result.outputPath,
+      downloadedVideo: !!req.body.videoUrl,
+      hadDownloadedVideo: !!result.downloadedVideoPath
+    });
+    
+  } catch (error) {
+    console.error('Error in Remotion test:', error);
+    console.error('Error stack:', error.stack);
+    res.status(500).json({ 
+      success: false, 
+      error: 'Remotion test failed',
+      details: error.message,
+      stack: error.stack
+    });
+  } finally {
+    // Clean up service
+    if (remotionService) {
+      await remotionService.cleanup();
+    }
+  }
+});
+
+// ... existing code ...
 
 app.listen(3000, () => console.log('Server running on port 3000'));
