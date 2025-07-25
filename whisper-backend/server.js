@@ -741,15 +741,77 @@ const containerClient = blobServiceClient.getContainerClient('capsuservideos');
 
 const storage = multer.diskStorage({
     destination: (req, file, cb) => {
-        cb(null, 'uploads/');
+        // Create uploads directory if it doesn't exist
+        const uploadDir = 'uploads/';
+        if (!fs.existsSync(uploadDir)) {
+            fs.mkdirSync(uploadDir, { recursive: true });
+        }
+        cb(null, uploadDir);
     },
     filename: (req, file, cb) => {
         cb(null, Date.now() + path.extname(file.originalname));
     }
 });
 
+// File filter to check file type and size
+const fileFilter = (req, file, cb) => {
+    // Check file type
+    const allowedTypes = ['video/mp4', 'video/avi', 'video/mov', 'video/wmv', 'video/flv', 'video/webm'];
+    if (!allowedTypes.includes(file.mimetype)) {
+        return cb(new Error('Invalid file type. Only video files are allowed.'), false);
+    }
+    
+    // Check file size (50MB limit)
+    const maxSize = 50 * 1024 * 1024; // 50MB in bytes
+    if (file.size && file.size > maxSize) {
+        return cb(new Error('File size exceeds 50MB limit.'), false);
+    }
+    
+    cb(null, true);
+};
 
-const upload = multer({ storage: storage });
+// Configure multer with limits and file filter
+const upload = multer({ 
+    storage: storage,
+    limits: {
+        fileSize: 50 * 1024 * 1024, // 50MB limit
+        files: 1 // Only allow 1 file per request
+    },
+    fileFilter: fileFilter
+});
+
+// Error handling middleware for multer errors
+const handleMulterError = (error, req, res, next) => {
+    if (error instanceof multer.MulterError) {
+        if (error.code === 'LIMIT_FILE_SIZE') {
+            return res.status(400).json({ 
+                error: 'File size exceeds 50MB limit. Please upload a smaller video file.' 
+            });
+        }
+        if (error.code === 'LIMIT_FILE_COUNT') {
+            return res.status(400).json({ 
+                error: 'Too many files. Please upload only one video file.' 
+            });
+        }
+        return res.status(400).json({ 
+            error: 'File upload error: ' + error.message 
+        });
+    }
+    
+    if (error.message && error.message.includes('Invalid file type')) {
+        return res.status(400).json({ 
+            error: 'Invalid file type. Only video files (MP4, AVI, MOV, WMV, FLV, WEBM) are allowed.' 
+        });
+    }
+    
+    if (error.message && error.message.includes('File size exceeds')) {
+        return res.status(400).json({ 
+            error: 'File size exceeds 50MB limit. Please upload a smaller video file.' 
+        });
+    }
+    
+    next(error);
+};
 
 async function uploadToAzure(filePath, customFilename = null) {
     try {
@@ -799,9 +861,18 @@ const transporter = nodemailer.createTransport({
 const AZURE_OPENAI_API_KEY = ''
 const AZURE_OPENAI_API_KEY_INTERNATIONAL = ''
 
-app.post('/api/process-video', upload.single('video'), async (req, res) => {
+app.post('/api/process-video', upload.single('video'), handleMulterError, async (req, res) => {
+    let videoFilePath = null;
+    let srtFilePath = null;
+    let outputPath = null;
+    
     try {
-        const videoFilePath = req.file.path;
+        // Check if file was uploaded
+        if (!req.file) {
+            return res.status(400).json({ error: 'No video file uploaded' });
+        }
+        
+        videoFilePath = req.file.path;
         console.log(videoFilePath);
         const language = req.body.SelectedLang;
         const isoneWord = req.body.WordLimit === 'true';
@@ -811,7 +882,7 @@ app.post('/api/process-video', upload.single('video'), async (req, res) => {
 
         console.log(isoneWord, "from front");
         let remaningmins = 0;
-        const outputPath = `${videoFilePath}_random.mp4`;
+        outputPath = `${videoFilePath}_random.mp4`;
         const watermarkPath = path.join(__dirname, 'watermarks', 'watermark.svg');
 
         const transcription = await processVideoInput(videoFilePath, isoneWord);
@@ -843,7 +914,7 @@ app.post('/api/process-video', upload.single('video'), async (req, res) => {
 
 
         const originalNameWithoutExt = originalFilename.replace(/\.[^/.]+$/, "");
-        const srtFilePath = path.join(__dirname, 'uploads', `${originalNameWithoutExt}.srt`);
+        srtFilePath = path.join(__dirname, 'uploads', `${originalNameWithoutExt}.srt`);
         fs.writeFileSync(srtFilePath, outputSrt);
 
         const random = processShuffledText(wordLayout, videoFilePath, srtFilePath, outputPath, isoneWord);
@@ -863,9 +934,20 @@ app.post('/api/process-video', upload.single('video'), async (req, res) => {
         console.log(videoUpload, srtUpload)
 
 
-        fs.unlinkSync(srtFilePath);
-        if (wordLayout == 'Shuffled text') {
-            fs.unlinkSync(outputPath);
+        // Cleanup temporary files
+        try {
+            if (srtFilePath && fs.existsSync(srtFilePath)) {
+                fs.unlinkSync(srtFilePath);
+            }
+            if (wordLayout == 'Shuffled text' && outputPath && fs.existsSync(outputPath)) {
+                fs.unlinkSync(outputPath);
+            }
+            // Clean up original uploaded file
+            if (videoFilePath && fs.existsSync(videoFilePath)) {
+                fs.unlinkSync(videoFilePath);
+            }
+        } catch (cleanupError) {
+            console.error('Error during cleanup:', cleanupError);
         }
 
         res.json({
@@ -878,12 +960,33 @@ app.post('/api/process-video', upload.single('video'), async (req, res) => {
             originalFilename: originalFilename,
         });
     } catch (error) {
+        // Cleanup on error
+        try {
+            if (videoFilePath && fs.existsSync(videoFilePath)) {
+                fs.unlinkSync(videoFilePath);
+            }
+            if (srtFilePath && fs.existsSync(srtFilePath)) {
+                fs.unlinkSync(srtFilePath);
+            }
+            if (outputPath && fs.existsSync(outputPath)) {
+                fs.unlinkSync(outputPath);
+            }
+        } catch (cleanupError) {
+            console.error('Error during error cleanup:', cleanupError);
+        }
+        
+        console.error('Error processing video:', error);
         res.status(500).json({ error: error.message });
     }
 });
 
 
-app.post('/api/change-style', upload.single('video'), async (req, res) => {
+app.post('/api/change-style', upload.single('video'), handleMulterError, async (req, res) => {
+    let srtFilePath = null;
+    let assFilePath = null;
+    let outputFilePath = null;
+    let modifedInput = null;
+    
     try {
 
         if (req.body.deletion) {
@@ -926,12 +1029,12 @@ app.post('/api/change-style', upload.single('video'), async (req, res) => {
         const watermarkPath = path.join(__dirname, 'watermarks', 'watermark.png');
         const tempassFile = path.join(__dirname, 'watermarks', 'temp.ass');
         const videoPath = inputVideo;
-        const srtFilePath = path.join(__dirname, 'uploads', `${path.basename(srtUrl)}`);
+        srtFilePath = path.join(__dirname, 'uploads', `${path.basename(srtUrl)}`);
         const srtResponse = await axios.get(srtUrl);
         fs.writeFileSync(srtFilePath, srtResponse.data);
         const srtContent = generateSRT(transcriptions);
         let assContent = isOneword ? convertSrtToAssWordByWord(srtContent, font, color, yPosition) : convertSrtToAssWordByWord(srtContent, font, color, yPosition, 4);
-        const assFilePath = path.join(__dirname, 'uploads', 'subtitles.ass');
+        assFilePath = path.join(__dirname, 'uploads', 'subtitles.ass');
         fs.writeFileSync(assFilePath, assContent);
         const tempOutputPath = temp.path({ suffix: '.mp4' });
         let resheight;
@@ -951,7 +1054,7 @@ app.post('/api/change-style', upload.single('video'), async (req, res) => {
 
         let remaningmins = 0;
 
-        let modifedInput = await VideoEmojiprocessing(assFilePath, videoPath, watermarkPath, resWidth, resheight);
+        modifedInput = await VideoEmojiprocessing(assFilePath, videoPath, watermarkPath, resWidth, resheight);
         const inputs = [modifedInput];
 
 
@@ -977,7 +1080,7 @@ app.post('/api/change-style', upload.single('video'), async (req, res) => {
             : `[0:a][0:a]amix=inputs=2[audioMix]`;  // If no sound effects, just mix the original audio stream
 
         let ffmpegCommand;
-        const outputFilePath = path.join(__dirname, 'uploads', path.basename(videoPath).replace('.mp4', '_output.mp4'));
+        outputFilePath = path.join(__dirname, 'uploads', path.basename(videoPath).replace('.mp4', '_output.mp4'));
 
 
 
@@ -1131,14 +1234,44 @@ app.post('/api/change-style', upload.single('video'), async (req, res) => {
             videomins: exact,
         });
 
-
-        fs.unlinkSync(srtFilePath)
-        fs.unlinkSync(assFilePath)
-        fs.unlinkSync(outputFilePath)
-        fs.unlinkSync(modifedInput)
+        // Cleanup temporary files
+        try {
+            if (srtFilePath && fs.existsSync(srtFilePath)) {
+                fs.unlinkSync(srtFilePath);
+            }
+            if (assFilePath && fs.existsSync(assFilePath)) {
+                fs.unlinkSync(assFilePath);
+            }
+            if (outputFilePath && fs.existsSync(outputFilePath)) {
+                fs.unlinkSync(outputFilePath);
+            }
+            if (modifedInput && fs.existsSync(modifedInput)) {
+                fs.unlinkSync(modifedInput);
+            }
+        } catch (cleanupError) {
+            console.error('Error during cleanup:', cleanupError);
+        }
 
         res.json({ videoUrl: outputVideoUrl });
     } catch (error) {
+        // Cleanup on error
+        try {
+            if (srtFilePath && fs.existsSync(srtFilePath)) {
+                fs.unlinkSync(srtFilePath);
+            }
+            if (assFilePath && fs.existsSync(assFilePath)) {
+                fs.unlinkSync(assFilePath);
+            }
+            if (outputFilePath && fs.existsSync(outputFilePath)) {
+                fs.unlinkSync(outputFilePath);
+            }
+            if (modifedInput && fs.existsSync(modifedInput)) {
+                fs.unlinkSync(modifedInput);
+            }
+        } catch (cleanupError) {
+            console.error('Error during error cleanup:', cleanupError);
+        }
+        
         console.error('Error changing style:', error);
         res.status(500).json({ error: error.message });
     }
@@ -2485,5 +2618,336 @@ function parseASS(file, emojiMapping, outputPath) {
     return { subtitles, modifiedLines };
 }
 
+
+
+
+// New Remotion-based video processing endpoint
+app.post('/api/change-style-remotion', upload.single('video'), handleMulterError, async (req, res) => {
+    try {
+        if (req.body.deletion) {
+            // Handle deletion logic (same as original)
+            if (req.get('X-CloudScheduler') !== 'true') {
+                console.error('Unauthorized deletion attempt');
+                return res.status(403).json({ error: 'Unauthorized' });
+            }
+
+            const receivedSignature = req.get('X-Signature');
+            const expectedSignature = crypto
+                .createHmac('sha256', process.env.SCHEDULER_SECRET)
+                .update(JSON.stringify(req.body))
+                .digest('hex');
+
+            if (receivedSignature !== expectedSignature) {
+                console.error('Invalid signature:', { receivedSignature, expectedSignature });
+                return res.status(403).json({ error: 'Invalid signature' });
+            }
+
+            if (req.body.deleteType === 'azure-blob') {
+                await deleteFromAzure(req.body.containerName, req.body.blobName);
+                console.log(`Deleted Azure blob: ${req.body.blobName}`);
+            }
+            else if (req.body.deleteType === 'firestore-doc') {
+                const docRef = admin.firestore().doc(req.body.docPath);
+                await docRef.delete();
+                console.log(`Deleted Firestore document: ${req.body.docPath}`);
+            }
+
+            return res.status(204).end();
+        }
+
+        const { inputVideo, font, color, xPosition, yPosition, srtUrl, Fontsize, userdata, uid, save, keyS3, transcriptions, isOneword, videoResolution, soundEffects } = req.body;
+        
+        if (!inputVideo || !font || !color || !xPosition || !yPosition || !srtUrl || !Fontsize || !userdata || !uid) {
+            return res.status(400).json({ error: 'Missing required fields in the request body' });
+        }
+
+        const watermarkPath = path.join(__dirname, 'watermarks', 'watermark.png');
+        const videoPath = inputVideo;
+        
+        // Process subtitles for Remotion
+        const processedSubtitles = remotionService.processSubtitles(transcriptions, isOneword);
+        
+        // Process sound effects for Remotion
+        const processedSoundEffects = remotionService.processSoundEffects(soundEffects || []);
+
+        // Set up output path
+        const outputFilePath = path.join(__dirname, 'uploads', `remotion_${Date.now()}.mp4`);
+
+        // Calculate remaining minutes
+        let remainingMins = 0;
+        const videoDuration = await getVideoDuration(videoPath);
+
+        if (userdata.usertype === 'free') {
+            if (videoDuration > 3) {
+                return res.status(400).json({ error: 'Video length exceeds 3 minutes limit for free users' });
+            }
+            remainingMins = userdata.videomins - videoDuration;
+        } else {
+            remainingMins = userdata.videomins - videoDuration;
+        }
+
+        // Render video with Remotion
+        console.log('Starting Remotion video processing...');
+        const renderResult = await remotionService.renderVideo({
+            videoSrc: videoPath,
+            subtitles: processedSubtitles,
+            font: {
+                fontFamily: font.fontFamily || 'Arial',
+                fontSize: parseInt(font.fontSize) || 32, // Increased default size
+                color: color,
+                fontWeight: font.fontWeight || 'normal',
+                fontStyle: font.fontStyle || 'normal',
+                textShadow: font.textShadow,
+                webkitTextStrokeWidth: font.webkitTextStrokeWidth,
+                webkitTextStrokeColor: font.webkitTextStrokeColor,
+                letterSpacing: font.letterSpacing,
+                padding: font.padding,
+            },
+            watermark: userdata.usertype === 'free' ? watermarkPath : null,
+            soundEffects: processedSoundEffects,
+            userType: userdata.usertype,
+            videoResolution: videoResolution,
+            yPosition: yPosition,
+            outputPath: outputFilePath,
+            fps: 24, // Optimized for smooth rendering
+            quality: 75, // Balanced quality for performance
+        });
+
+        if (!renderResult.success) {
+            throw new Error('Remotion rendering failed');
+        }
+
+        // Upload to Azure
+        let outputUpload;
+        let outputVideoUrl;
+
+        if (save) {
+            outputUpload = await uploadToAzure(outputFilePath);
+            outputVideoUrl = outputUpload.url;
+
+            // Set up deletion tasks
+            await db.collection('deletionTasks').add({
+                type: 'azure-blob',
+                containerName: 'capsuservideos',
+                blobName: keyS3,
+                deleteAt: admin.firestore.Timestamp.fromDate(
+                    new Date(Date.now() + (userdata.usertype === 'free' ? 15 : 20) * 60000)
+                )
+            });
+
+            await db.collection('deletionTasks').add({
+                type: 'azure-blob',
+                containerName: 'capsuservideos',
+                blobName: outputUpload.blobName,
+                deleteAt: admin.firestore.Timestamp.fromDate(
+                    new Date(Date.now() + (userdata.usertype === 'free' ? 15 : 20) * 60000)
+                )
+            });
+
+            // Save to Firestore
+            const newDocRef = await db.collection('users').doc(uid).collection('videos').add({
+                videoUrl: videoPath,
+                srt: srtUrl,
+                fontadded: font,
+                createdAt: admin.firestore.FieldValue.serverTimestamp(),
+                key: keyS3,
+                transcriptions: transcriptions,
+                processedWith: 'remotion'
+            });
+
+            await db.collection('deletionTasks').add({
+                type: 'firestore-doc',
+                docPath: `users/${uid}/videos/${newDocRef.id}`,
+                deleteAt: admin.firestore.Timestamp.fromDate(
+                    new Date(Date.now() + (userdata.usertype === 'free' ? 15 : 20) * 60000))
+            });
+        } else {
+            outputUpload = await uploadToAzure(outputFilePath);
+            outputVideoUrl = outputUpload.url;
+        }
+
+        // Update user video minutes
+        const userRef = db.collection('users').doc(uid);
+        const exact = remainingMins <= 0 ? 0 : remainingMins.toFixed(1);
+        
+        await userRef.update({
+            videomins: exact,
+        });
+
+        // Clean up temporary files
+        if (fs.existsSync(outputFilePath)) {
+            fs.unlinkSync(outputFilePath);
+        }
+
+        console.log('Remotion video processing completed successfully');
+        res.json({ 
+            videoUrl: outputVideoUrl,
+            processedWith: 'remotion',
+            renderTime: renderResult.renderTime,
+            success: true
+        });
+
+    } catch (error) {
+        console.error('Error in Remotion video processing:', error);
+        res.status(500).json({ 
+            error: error.message,
+            processedWith: 'remotion',
+            success: false
+        });
+    }
+});
+
+// Test endpoint for Remotion service
+app.post('/api/test-remotion', async (req, res) => {
+  let remotionService;
+  
+  try {
+    console.log('Testing Remotion service...');
+    
+    // Test with a real Azure URL to verify download functionality
+    const testData = {
+      videoSrc: req.body.videoUrl || null, // Allow testing with real URLs
+      subtitles: [
+        {
+          id: 1,
+          timeStart: "00:00:00,000",
+          timeEnd: "00:00:03,000",
+          value: "Hello World! 🎉"
+        },
+        {
+          id: 2,
+          timeStart: "00:00:03,000", 
+          timeEnd: "00:00:06,000",
+          value: "This is a test subtitle! 🚀"
+        }
+      ],
+      font: {
+        fontFamily: 'Arial',
+        fontSize: 56, // Increased size for better visibility
+        color: '#ffffff',
+        fontWeight: 'bold',
+        textShadow: '2px 2px 4px rgba(0,0,0,0.8)'
+      },
+      watermark: null,
+      soundEffects: [],
+      userType: 'free',
+      videoResolution: '16:9',
+      yPosition: 100
+    };
+    
+    const outputPath = path.join(__dirname, 'out', `test-${Date.now()}.mp4`);
+    
+    remotionService = new RemotionVideoService();
+    
+    // Clean up old downloads first
+    await remotionService.cleanupOldDownloads();
+    
+    const result = await remotionService.renderVideo({
+      ...testData,
+      outputPath,
+      fps: 24, // Optimized for smooth rendering
+      quality: 75, // Balanced quality for performance
+    });
+    
+    console.log('Remotion test completed successfully');
+    
+    // Clean up the downloaded video file if it exists
+    if (result.downloadedVideoPath) {
+      remotionService.cleanupDownloadedVideo(result.downloadedVideoPath);
+    }
+    
+    res.json({ 
+      success: true, 
+      message: 'Remotion test completed',
+      outputPath: result.outputPath,
+      downloadedVideo: !!req.body.videoUrl,
+      hadDownloadedVideo: !!result.downloadedVideoPath
+    });
+    
+  } catch (error) {
+    console.error('Error in Remotion test:', error);
+    console.error('Error stack:', error.stack);
+    res.status(500).json({ 
+      success: false, 
+      error: 'Remotion test failed',
+      details: error.message,
+      stack: error.stack
+    });
+  } finally {
+    // Clean up service
+    if (remotionService) {
+      await remotionService.cleanup();
+    }
+  }
+});
+
+// ... existing code ...
+
+app.listen(3000, () => console.log('Server running on port 3000'));
+
+// Cleanup function for uploads directory
+async function cleanupUploadsDirectory() {
+    try {
+        const uploadsDir = 'uploads/';
+        if (!fs.existsSync(uploadsDir)) {
+            return;
+        }
+
+        const files = fs.readdirSync(uploadsDir);
+        const now = Date.now();
+        const maxAge = 30 * 60 * 1000; // 30 minutes
+
+        for (const file of files) {
+            const filePath = path.join(uploadsDir, file);
+            const stats = fs.statSync(filePath);
+            
+            // Delete files older than 30 minutes
+            if (now - stats.mtime.getTime() > maxAge) {
+                try {
+                    fs.unlinkSync(filePath);
+                    console.log(`Cleaned up old file: ${file}`);
+                } catch (error) {
+                    console.error(`Error deleting file ${file}:`, error);
+                }
+            }
+        }
+    } catch (error) {
+        console.error('Error during uploads cleanup:', error);
+    }
+}
+
+// Run cleanup every 10 minutes
+setInterval(cleanupUploadsDirectory, 10 * 60 * 1000);
+
+// Initial cleanup on server start
+cleanupUploadsDirectory();
+
+// Global error handler
+app.use((error, req, res, next) => {
+    console.error('Unhandled error:', error);
+    
+    // Handle specific error types
+    if (error.code === 'ENOSPC') {
+        return res.status(500).json({ 
+            error: 'Server storage is full. Please try again later.' 
+        });
+    }
+    
+    if (error.code === 'ENOMEM') {
+        return res.status(500).json({ 
+            error: 'Server memory limit exceeded. Please try with a smaller video file.' 
+        });
+    }
+    
+    // Default error response
+    res.status(500).json({ 
+        error: 'An unexpected error occurred. Please try again.' 
+    });
+});
+
+// Handle 404 errors
+app.use((req, res) => {
+    res.status(404).json({ error: 'Endpoint not found' });
+});
 
 app.listen(3000, () => console.log('Server running on port 3000'));
