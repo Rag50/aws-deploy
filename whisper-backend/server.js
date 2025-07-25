@@ -2880,9 +2880,6 @@ app.post('/api/test-remotion', async (req, res) => {
     }
   }
 });
-
-// ... existing code ...
-
 app.listen(3000, () => console.log('Server running on port 3000'));
 
 // Cleanup function for uploads directory
