@@ -28,19 +28,19 @@ dotenv.config();
 
 // live setup 
 const PRODUCT_MAPPING = {
-    1.99: 'pdt_uwqatZU7K1BaqsNeYlOWc',
-    3.99: 'pdt_J3WoHFbvVLoONYIIWteT5',
-    5.99: 'pdt_VCCzkntjz5GOZBx8DQZuo',
-    7.99: 'pdt_UK6liWZ39h9QEaPeAu9vE',
-    9.99: 'pdt_fIVAjFQwoDzqYmaE4zHop',
-    11.99: 'pdt_zZosDjr2HYH6bw69b9Unt',
-    14.99: 'pdt_reRUcid3GTNyrR0guxszQ',
-    17.99: 'pdt_RBxDwHIY7AerKbk55qVUM',
-    20.00: 'pdt_FH53QV66vuRKYdLX99yjF'
+    "1.99": 'pdt_wbJ4PY1KKhs8eokCm5VZV',
+    "3.99": 'pdt_J3WoHFbvVLoONYIIWteT5',
+    "5.99": 'pdt_VCCzkntjz5GOZBx8DQZuo',
+    "7.99": 'pdt_UK6liWZ39h9QEaPeAu9vE',
+    "9.99": 'pdt_fIVAjFQwoDzqYmaE4zHop',
+    "11.99": 'pdt_zZosDjr2HYH6bw69b9Unt',
+    "14.99": 'pdt_reRUcid3GTNyrR0guxszQ',
+    "17.99": 'pdt_RBxDwHIY7AerKbk55qVUM',
+    "20.00": 'pdt_FH53QV66vuRKYdLX99yjF'
 };
 
 // Fallback product ID if no matching amount is found
-const DEFAULT_USD_PRODUCT_ID = process.env.DODO_DEFAULT_PRODUCT || 'pdt_uwqatZU7K1BaqsNeYlOWc';
+const DEFAULT_USD_PRODUCT_ID = process.env.DODO_DEFAULT_PRODUCT;
 
 /**
  * Get the appropriate product ID based on the amount
@@ -48,19 +48,27 @@ const DEFAULT_USD_PRODUCT_ID = process.env.DODO_DEFAULT_PRODUCT || 'pdt_uwqatZU7
  * @returns {string} The product ID to use
  */
 function getProductIdForAmount(amount) {
-    // Convert amount to cents for comparison
-    const amountInCents = Math.round(amount * 100);
-
-    // Check if we have a direct match
-    if (PRODUCT_MAPPING[amountInCents]) {
-        return PRODUCT_MAPPING[amountInCents];
+    console.log('getProductIdForAmount called with amount:', amount);
+    console.log('PRODUCT_MAPPING keys:', Object.keys(PRODUCT_MAPPING));
+    
+    // Convert amount to string for comparison with string keys
+    const amountStr = amount.toString();
+    
+    // Check if we have a direct match with the original amount
+    if (PRODUCT_MAPPING[amountStr]) {
+        console.log('Direct match found, returning:', PRODUCT_MAPPING[amountStr]);
+        return PRODUCT_MAPPING[amountStr];
     }
 
     // If no direct match, find the closest lower amount
     const availableAmounts = Object.keys(PRODUCT_MAPPING).map(Number).sort((a, b) => b - a);
-    const matchingAmount = availableAmounts.find(a => a <= amountInCents);
+    console.log('Available amounts:', availableAmounts);
+    const matchingAmount = availableAmounts.find(a => a <= amount);
+    console.log('Matching amount:', matchingAmount);
 
-    return matchingAmount ? PRODUCT_MAPPING[matchingAmount] : DEFAULT_USD_PRODUCT_ID;
+    const result = matchingAmount ? PRODUCT_MAPPING[matchingAmount.toString()] : DEFAULT_USD_PRODUCT_ID;
+    console.log('Returning product ID:', result);
+    return result;
 }
 
 // Enhanced HTTP agent configuration
@@ -760,18 +768,18 @@ const fileFilter = (req, file, cb) => {
     if (!allowedTypes.includes(file.mimetype)) {
         return cb(new Error('Invalid file type. Only video files are allowed.'), false);
     }
-    
+
     // Check file size (50MB limit)
     const maxSize = 50 * 1024 * 1024; // 50MB in bytes
     if (file.size && file.size > maxSize) {
         return cb(new Error('File size exceeds 50MB limit.'), false);
     }
-    
+
     cb(null, true);
 };
 
 // Configure multer with limits and file filter
-const upload = multer({ 
+const upload = multer({
     storage: storage,
     limits: {
         fileSize: 50 * 1024 * 1024, // 50MB limit
@@ -784,32 +792,32 @@ const upload = multer({
 const handleMulterError = (error, req, res, next) => {
     if (error instanceof multer.MulterError) {
         if (error.code === 'LIMIT_FILE_SIZE') {
-            return res.status(400).json({ 
-                error: 'File size exceeds 50MB limit. Please upload a smaller video file.' 
+            return res.status(400).json({
+                error: 'File size exceeds 50MB limit. Please upload a smaller video file.'
             });
         }
         if (error.code === 'LIMIT_FILE_COUNT') {
-            return res.status(400).json({ 
-                error: 'Too many files. Please upload only one video file.' 
+            return res.status(400).json({
+                error: 'Too many files. Please upload only one video file.'
             });
         }
-        return res.status(400).json({ 
-            error: 'File upload error: ' + error.message 
+        return res.status(400).json({
+            error: 'File upload error: ' + error.message
         });
     }
-    
+
     if (error.message && error.message.includes('Invalid file type')) {
-        return res.status(400).json({ 
-            error: 'Invalid file type. Only video files (MP4, AVI, MOV, WMV, FLV, WEBM) are allowed.' 
+        return res.status(400).json({
+            error: 'Invalid file type. Only video files (MP4, AVI, MOV, WMV, FLV, WEBM) are allowed.'
         });
     }
-    
+
     if (error.message && error.message.includes('File size exceeds')) {
-        return res.status(400).json({ 
-            error: 'File size exceeds 50MB limit. Please upload a smaller video file.' 
+        return res.status(400).json({
+            error: 'File size exceeds 50MB limit. Please upload a smaller video file.'
         });
     }
-    
+
     next(error);
 };
 
@@ -865,13 +873,13 @@ app.post('/api/process-video', upload.single('video'), handleMulterError, async 
     let videoFilePath = null;
     let srtFilePath = null;
     let outputPath = null;
-    
+
     try {
         // Check if file was uploaded
         if (!req.file) {
             return res.status(400).json({ error: 'No video file uploaded' });
         }
-        
+
         videoFilePath = req.file.path;
         console.log(videoFilePath);
         const language = req.body.SelectedLang;
@@ -974,7 +982,7 @@ app.post('/api/process-video', upload.single('video'), handleMulterError, async 
         } catch (cleanupError) {
             console.error('Error during error cleanup:', cleanupError);
         }
-        
+
         console.error('Error processing video:', error);
         res.status(500).json({ error: error.message });
     }
@@ -986,7 +994,7 @@ app.post('/api/change-style', upload.single('video'), handleMulterError, async (
     let assFilePath = null;
     let outputFilePath = null;
     let modifedInput = null;
-    
+
     try {
 
         if (req.body.deletion) {
@@ -1271,7 +1279,7 @@ app.post('/api/change-style', upload.single('video'), handleMulterError, async (
         } catch (cleanupError) {
             console.error('Error during error cleanup:', cleanupError);
         }
-        
+
         console.error('Error changing style:', error);
         res.status(500).json({ error: error.message });
     }
@@ -1362,6 +1370,7 @@ app.post('/api/dodo-payment', async (req, res) => {
         };
 
         const productId = getProductIdForAmount(amount);
+        console.log('Selected product ID for amount', amount, ':', productId);
 
         const successUrl = `${return_url}`;
         const cancelUrl = `${return_url}`;
@@ -1388,7 +1397,7 @@ app.post('/api/dodo-payment', async (req, res) => {
             cancel_url: cancelUrl,
         };
 
-
+        console.log('Payment data being sent to Dodo:', JSON.stringify(paymentData, null, 2));
         console.log(successUrl);
 
         // Create payment
@@ -1838,30 +1847,30 @@ footer {
 
 app.post("/api/sendVerificationCode-email-auth", async (req, res) => {
     const { email } = req.body;
-  
+
 
     if (!email) {
-      return res.status(400).json({ message: "Email is required" });
+        return res.status(400).json({ message: "Email is required" });
     }
-  
-   
+
+
     const verificationCode = Math.floor(1000 + Math.random() * 9000);
-  
+
     try {
-      await db
-        .collection("verificationCodes")
-        .doc(email)
-        .set({
-          code: verificationCode,
-          expiresAt: Date.now() + 60 * 1000, 
-        });
-  
-      
-      const mailOptions = {
-        from: '"Capsai" <ai.editor@capsai.co>',
-        to: email,
-        subject: "Your Verification Code",
-        html: `
+        await db
+            .collection("verificationCodes")
+            .doc(email)
+            .set({
+                code: verificationCode,
+                expiresAt: Date.now() + 60 * 1000,
+            });
+
+
+        const mailOptions = {
+            from: '"Capsai" <ai.editor@capsai.co>',
+            to: email,
+            subject: "Your Verification Code",
+            html: `
           <!DOCTYPE html>
           <html lang="en">
           <head>
@@ -1881,19 +1890,19 @@ app.post("/api/sendVerificationCode-email-auth", async (req, res) => {
         </body>
         </html>
       `,
-    };
+        };
 
-    // nodemailer v6+ returns a Promise if no callback is supplied
-    await transporter.sendMail(mailOptions);
+        // nodemailer v6+ returns a Promise if no callback is supplied
+        await transporter.sendMail(mailOptions);
 
-    // 4️⃣ Single success response --------------------------------------------
-    return res.status(200).json({ message: "Verification code sent" });
-  } catch (err) {
-    console.error("Error sending verification code:", err);
-    return res
-      .status(500)
-      .json({ message: "Failed to send e-mail", error: err.message });
-  }
+        // 4️⃣ Single success response --------------------------------------------
+        return res.status(200).json({ message: "Verification code sent" });
+    } catch (err) {
+        console.error("Error sending verification code:", err);
+        return res
+            .status(500)
+            .json({ message: "Failed to send e-mail", error: err.message });
+    }
 });
 
 
@@ -2656,17 +2665,17 @@ app.post('/api/change-style-remotion', upload.single('video'), handleMulterError
         }
 
         const { inputVideo, font, color, xPosition, yPosition, srtUrl, Fontsize, userdata, uid, save, keyS3, transcriptions, isOneword, videoResolution, soundEffects } = req.body;
-        
+
         if (!inputVideo || !font || !color || !xPosition || !yPosition || !srtUrl || !Fontsize || !userdata || !uid) {
             return res.status(400).json({ error: 'Missing required fields in the request body' });
         }
 
         const watermarkPath = path.join(__dirname, 'watermarks', 'watermark.png');
         const videoPath = inputVideo;
-        
+
         // Process subtitles for Remotion
         const processedSubtitles = remotionService.processSubtitles(transcriptions, isOneword);
-        
+
         // Process sound effects for Remotion
         const processedSoundEffects = remotionService.processSoundEffects(soundEffects || []);
 
@@ -2769,7 +2778,7 @@ app.post('/api/change-style-remotion', upload.single('video'), handleMulterError
         // Update user video minutes
         const userRef = db.collection('users').doc(uid);
         const exact = remainingMins <= 0 ? 0 : remainingMins.toFixed(1);
-        
+
         await userRef.update({
             videomins: exact,
         });
@@ -2780,7 +2789,7 @@ app.post('/api/change-style-remotion', upload.single('video'), handleMulterError
         }
 
         console.log('Remotion video processing completed successfully');
-        res.json({ 
+        res.json({
             videoUrl: outputVideoUrl,
             processedWith: 'remotion',
             renderTime: renderResult.renderTime,
@@ -2789,7 +2798,7 @@ app.post('/api/change-style-remotion', upload.single('video'), handleMulterError
 
     } catch (error) {
         console.error('Error in Remotion video processing:', error);
-        res.status(500).json({ 
+        res.status(500).json({
             error: error.message,
             processedWith: 'remotion',
             success: false
@@ -2799,86 +2808,86 @@ app.post('/api/change-style-remotion', upload.single('video'), handleMulterError
 
 // Test endpoint for Remotion service
 app.post('/api/test-remotion', async (req, res) => {
-  let remotionService;
-  
-  try {
-    console.log('Testing Remotion service...');
-    
-    // Test with a real Azure URL to verify download functionality
-    const testData = {
-      videoSrc: req.body.videoUrl || null, // Allow testing with real URLs
-      subtitles: [
-        {
-          id: 1,
-          timeStart: "00:00:00,000",
-          timeEnd: "00:00:03,000",
-          value: "Hello World! 🎉"
-        },
-        {
-          id: 2,
-          timeStart: "00:00:03,000", 
-          timeEnd: "00:00:06,000",
-          value: "This is a test subtitle! 🚀"
+    let remotionService;
+
+    try {
+        console.log('Testing Remotion service...');
+
+        // Test with a real Azure URL to verify download functionality
+        const testData = {
+            videoSrc: req.body.videoUrl || null, // Allow testing with real URLs
+            subtitles: [
+                {
+                    id: 1,
+                    timeStart: "00:00:00,000",
+                    timeEnd: "00:00:03,000",
+                    value: "Hello World! 🎉"
+                },
+                {
+                    id: 2,
+                    timeStart: "00:00:03,000",
+                    timeEnd: "00:00:06,000",
+                    value: "This is a test subtitle! 🚀"
+                }
+            ],
+            font: {
+                fontFamily: 'Arial',
+                fontSize: 56, // Increased size for better visibility
+                color: '#ffffff',
+                fontWeight: 'bold',
+                textShadow: '2px 2px 4px rgba(0,0,0,0.8)'
+            },
+            watermark: null,
+            soundEffects: [],
+            userType: 'free',
+            videoResolution: '16:9',
+            yPosition: 100
+        };
+
+        const outputPath = path.join(__dirname, 'out', `test-${Date.now()}.mp4`);
+
+        remotionService = new RemotionVideoService();
+
+        // Clean up old downloads first
+        await remotionService.cleanupOldDownloads();
+
+        const result = await remotionService.renderVideo({
+            ...testData,
+            outputPath,
+            fps: 24, // Optimized for smooth rendering
+            quality: 75, // Balanced quality for performance
+        });
+
+        console.log('Remotion test completed successfully');
+
+        // Clean up the downloaded video file if it exists
+        if (result.downloadedVideoPath) {
+            remotionService.cleanupDownloadedVideo(result.downloadedVideoPath);
         }
-      ],
-      font: {
-        fontFamily: 'Arial',
-        fontSize: 56, // Increased size for better visibility
-        color: '#ffffff',
-        fontWeight: 'bold',
-        textShadow: '2px 2px 4px rgba(0,0,0,0.8)'
-      },
-      watermark: null,
-      soundEffects: [],
-      userType: 'free',
-      videoResolution: '16:9',
-      yPosition: 100
-    };
-    
-    const outputPath = path.join(__dirname, 'out', `test-${Date.now()}.mp4`);
-    
-    remotionService = new RemotionVideoService();
-    
-    // Clean up old downloads first
-    await remotionService.cleanupOldDownloads();
-    
-    const result = await remotionService.renderVideo({
-      ...testData,
-      outputPath,
-      fps: 24, // Optimized for smooth rendering
-      quality: 75, // Balanced quality for performance
-    });
-    
-    console.log('Remotion test completed successfully');
-    
-    // Clean up the downloaded video file if it exists
-    if (result.downloadedVideoPath) {
-      remotionService.cleanupDownloadedVideo(result.downloadedVideoPath);
+
+        res.json({
+            success: true,
+            message: 'Remotion test completed',
+            outputPath: result.outputPath,
+            downloadedVideo: !!req.body.videoUrl,
+            hadDownloadedVideo: !!result.downloadedVideoPath
+        });
+
+    } catch (error) {
+        console.error('Error in Remotion test:', error);
+        console.error('Error stack:', error.stack);
+        res.status(500).json({
+            success: false,
+            error: 'Remotion test failed',
+            details: error.message,
+            stack: error.stack
+        });
+    } finally {
+        // Clean up service
+        if (remotionService) {
+            await remotionService.cleanup();
+        }
     }
-    
-    res.json({ 
-      success: true, 
-      message: 'Remotion test completed',
-      outputPath: result.outputPath,
-      downloadedVideo: !!req.body.videoUrl,
-      hadDownloadedVideo: !!result.downloadedVideoPath
-    });
-    
-  } catch (error) {
-    console.error('Error in Remotion test:', error);
-    console.error('Error stack:', error.stack);
-    res.status(500).json({ 
-      success: false, 
-      error: 'Remotion test failed',
-      details: error.message,
-      stack: error.stack
-    });
-  } finally {
-    // Clean up service
-    if (remotionService) {
-      await remotionService.cleanup();
-    }
-  }
 });
 app.listen(3000, () => console.log('Server running on port 3000'));
 
@@ -2897,7 +2906,7 @@ async function cleanupUploadsDirectory() {
         for (const file of files) {
             const filePath = path.join(uploadsDir, file);
             const stats = fs.statSync(filePath);
-            
+
             // Delete files older than 30 minutes
             if (now - stats.mtime.getTime() > maxAge) {
                 try {
@@ -2922,23 +2931,23 @@ cleanupUploadsDirectory();
 // Global error handler
 app.use((error, req, res, next) => {
     console.error('Unhandled error:', error);
-    
+
     // Handle specific error types
     if (error.code === 'ENOSPC') {
-        return res.status(500).json({ 
-            error: 'Server storage is full. Please try again later.' 
+        return res.status(500).json({
+            error: 'Server storage is full. Please try again later.'
         });
     }
-    
+
     if (error.code === 'ENOMEM') {
-        return res.status(500).json({ 
-            error: 'Server memory limit exceeded. Please try with a smaller video file.' 
+        return res.status(500).json({
+            error: 'Server memory limit exceeded. Please try with a smaller video file.'
         });
     }
-    
+
     // Default error response
-    res.status(500).json({ 
-        error: 'An unexpected error occurred. Please try again.' 
+    res.status(500).json({
+        error: 'An unexpected error occurred. Please try again.'
     });
 });
 
