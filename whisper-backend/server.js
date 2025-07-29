@@ -30,6 +30,9 @@ dotenv.config();
 // Initialize Remotion service
 const remotionService = new RemotionVideoService();
 
+
+// remotion + s3  storage setup
+
 // live setup 
 const PRODUCT_MAPPING = {
     1.99: 'pdt_uwqatZU7K1BaqsNeYlOWc',
