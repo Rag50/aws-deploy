@@ -2891,42 +2891,111 @@ app.post('/api/test-remotion', async (req, res) => {
 });
 app.listen(3000, () => console.log('Server running on port 3000'));
 
-// Cleanup function for uploads directory
+// Improved cleanup function for uploads directory
 async function cleanupUploadsDirectory() {
     try {
         const uploadsDir = 'uploads/';
-        if (!fs.existsSync(uploadsDir)) {
-            return;
+        
+        // Check if uploads directory exists
+        try {
+            await fs.promises.access(uploadsDir);
+        } catch (error) {
+            return { totalFiles: 0, deletedCount: 0, errorCount: 0 };
         }
 
-        const files = fs.readdirSync(uploadsDir);
+        const files = await fs.promises.readdir(uploadsDir);
         const now = Date.now();
         const maxAge = 30 * 60 * 1000; // 30 minutes
+        let deletedCount = 0;
+        let errorCount = 0;
 
-        for (const file of files) {
-            const filePath = path.join(uploadsDir, file);
-            const stats = fs.statSync(filePath);
-
-            // Delete files older than 30 minutes
-            if (now - stats.mtime.getTime() > maxAge) {
+        // Process files in batches to avoid overwhelming the system
+        const batchSize = 10;
+        for (let i = 0; i < files.length; i += batchSize) {
+            const batch = files.slice(i, i + batchSize);
+            
+            await Promise.all(batch.map(async (file) => {
                 try {
-                    fs.unlinkSync(filePath);
-                    console.log(`Cleaned up old file: ${file}`);
+                    const filePath = path.join(uploadsDir, file);
+                    const stats = await fs.promises.stat(filePath);
+                    
+                    // Check if file is older than maxAge
+                    if (now - stats.mtime.getTime() > maxAge) {
+                        // Additional safety check - only delete common temporary file types
+                        const allowedExtensions = ['.mp4', '.avi', '.mov', '.wmv', '.flv', '.webm', '.srt', '.ass', '.wav', '.tmp'];
+                        const fileExt = path.extname(file).toLowerCase();
+                        
+                        if (allowedExtensions.includes(fileExt)) {
+                            await fs.promises.unlink(filePath);
+                            console.log(`Cleaned up old file: ${file}`);
+                            deletedCount++;
+                        } else {
+                            console.log(`Skipping file with unexpected extension: ${file} (${fileExt})`);
+                        }
+                    }
                 } catch (error) {
-                    console.error(`Error deleting file ${file}:`, error);
+                    console.error(`Error processing file ${file}:`, error.message);
+                    errorCount++;
                 }
+            }));
+            
+            // Small delay between batches to prevent overwhelming the system
+            if (i + batchSize < files.length) {
+                await new Promise(resolve => setTimeout(resolve, 50));
             }
         }
+
+        if (deletedCount > 0 || errorCount > 0) {
+            console.log(`Cleanup completed. Deleted ${deletedCount} files, ${errorCount} errors.`);
+        }
+        
+        return {
+            totalFiles: files.length,
+            deletedCount,
+            errorCount,
+            timestamp: new Date().toISOString()
+        };
+        
     } catch (error) {
         console.error('Error during uploads cleanup:', error);
+        return { totalFiles: 0, deletedCount: 0, errorCount: 1 };
     }
 }
 
-// Run cleanup every 10 minutes
-setInterval(cleanupUploadsDirectory, 10 * 60 * 1000);
+// Enhanced cleanup with retry mechanism
+async function cleanupWithRetry(maxRetries = 2) {
+    for (let attempt = 1; attempt <= maxRetries; attempt++) {
+        try {
+            const result = await cleanupUploadsDirectory();
+            return result;
+        } catch (error) {
+            console.error(`Cleanup attempt ${attempt} failed:`, error.message);
+            
+            if (attempt === maxRetries) {
+                console.error('All cleanup attempts failed');
+                return { totalFiles: 0, deletedCount: 0, errorCount: 1 };
+            }
+            
+            // Wait before retrying (exponential backoff)
+            const delay = Math.pow(2, attempt) * 1000;
+            await new Promise(resolve => setTimeout(resolve, delay));
+        }
+    }
+}
+
+// Run cleanup every 10 minutes with retry mechanism
+setInterval(async () => {
+    try {
+        await cleanupWithRetry();
+    } catch (error) {
+        console.error('Periodic cleanup failed:', error);
+    }
+}, 10 * 60 * 1000);
 
 // Initial cleanup on server start
-cleanupUploadsDirectory();
+cleanupWithRetry().catch(error => {
+    console.error('Initial cleanup failed:', error);
+});
 
 // Global error handler
 app.use((error, req, res, next) => {
