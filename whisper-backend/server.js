@@ -823,19 +823,26 @@ const handleMulterError = (error, req, res, next) => {
 
 async function uploadToAzure(filePath, customFilename = null) {
     try {
+        // Check if file exists before uploading
+        if (!fs.existsSync(filePath)) {
+            throw new Error(`File does not exist: ${filePath}`);
+        }
 
+        const fileStats = fs.statSync(filePath);
+        if (fileStats.size === 0) {
+            throw new Error(`File is empty: ${filePath}`);
+        }
 
         const blobName = customFilename || path.basename(filePath);
 
-        console.log(`Uploading file: ${filePath} as: ${blobName}`);
+        console.log(`Uploading file: ${filePath} as: ${blobName} (size: ${fileStats.size} bytes)`);
 
         const blockBlobClient = containerClient.getBlockBlobClient(blobName);
-
 
         const fileStream = fs.createReadStream(filePath);
         const uploadBlobResponse = await blockBlobClient.uploadStream(fileStream);
 
-        console.log(`Upload completed. Blob name: ${blobName}`);
+        console.log(`Upload completed. Blob name: ${blobName}, URL: ${blockBlobClient.url}`);
 
         return {
             url: blockBlobClient.url,
@@ -1159,6 +1166,18 @@ app.post('/api/change-style', upload.single('video'), handleMulterError, async (
         let outputUpload
         let outputVideoUrl
 
+        // Check if output file exists and has proper size before uploading
+        if (!fs.existsSync(outputFilePath)) {
+            throw new Error(`Output video file was not created: ${outputFilePath}`);
+        }
+
+        const outputFileStats = fs.statSync(outputFilePath);
+        if (outputFileStats.size === 0) {
+            throw new Error(`Output video file is empty: ${outputFilePath}`);
+        }
+
+        console.log(`Output video file created successfully: ${outputFilePath} (size: ${outputFileStats.size} bytes)`);
+
         // save logic  old one 
         if (save) {
 
@@ -1261,6 +1280,27 @@ app.post('/api/change-style', upload.single('video'), handleMulterError, async (
         }
 
         res.json({ videoUrl: outputVideoUrl });
+        
+        // Add a small delay before cleanup to ensure upload completes
+        setTimeout(() => {
+            // Cleanup temporary files
+            try {
+                if (srtFilePath && fs.existsSync(srtFilePath)) {
+                    fs.unlinkSync(srtFilePath);
+                }
+                if (assFilePath && fs.existsSync(assFilePath)) {
+                    fs.unlinkSync(assFilePath);
+                }
+                if (outputFilePath && fs.existsSync(outputFilePath)) {
+                    fs.unlinkSync(outputFilePath);
+                }
+                if (modifedInput && fs.existsSync(modifedInput)) {
+                    fs.unlinkSync(modifedInput);
+                }
+            } catch (cleanupError) {
+                console.error('Error during cleanup:', cleanupError);
+            }
+        }, 2000); // 2 second delay
     } catch (error) {
         // Cleanup on error
         try {
@@ -2889,7 +2929,6 @@ app.post('/api/test-remotion', async (req, res) => {
         }
     }
 });
-app.listen(3000, () => console.log('Server running on port 3000'));
 
 // Improved cleanup function for uploads directory
 async function cleanupUploadsDirectory() {
@@ -2925,12 +2964,22 @@ async function cleanupUploadsDirectory() {
                         const allowedExtensions = ['.mp4', '.avi', '.mov', '.wmv', '.flv', '.webm', '.srt', '.ass', '.wav', '.tmp'];
                         const fileExt = path.extname(file).toLowerCase();
                         
-                        if (allowedExtensions.includes(fileExt)) {
+                        // Extra safety: don't delete files that might be currently in use
+                        const fileSize = stats.size;
+                        const isRecentlyModified = (now - stats.mtime.getTime()) < (5 * 60 * 1000); // 5 minutes
+                        
+                        if (allowedExtensions.includes(fileExt) && !isRecentlyModified && fileSize > 0) {
                             await fs.promises.unlink(filePath);
-                            console.log(`Cleaned up old file: ${file}`);
+                            console.log(`Cleaned up old file: ${file} (size: ${fileSize} bytes)`);
                             deletedCount++;
                         } else {
-                            console.log(`Skipping file with unexpected extension: ${file} (${fileExt})`);
+                            if (isRecentlyModified) {
+                                console.log(`Skipping recently modified file: ${file}`);
+                            } else if (fileSize === 0) {
+                                console.log(`Skipping empty file: ${file}`);
+                            } else {
+                                console.log(`Skipping file with unexpected extension: ${file} (${fileExt})`);
+                            }
                         }
                     }
                 } catch (error) {
@@ -2983,19 +3032,23 @@ async function cleanupWithRetry(maxRetries = 2) {
     }
 }
 
-// Run cleanup every 10 minutes with retry mechanism
+// Run cleanup every 15 minutes with retry mechanism (increased from 10 minutes)
 setInterval(async () => {
     try {
         await cleanupWithRetry();
     } catch (error) {
         console.error('Periodic cleanup failed:', error);
     }
-}, 10 * 60 * 1000);
+}, 15 * 60 * 1000); // Changed from 10 minutes to 15 minutes
 
-// Initial cleanup on server start
-cleanupWithRetry().catch(error => {
-    console.error('Initial cleanup failed:', error);
-});
+// Initial cleanup on server start with delay
+setTimeout(async () => {
+    try {
+        await cleanupWithRetry();
+    } catch (error) {
+        console.error('Initial cleanup failed:', error);
+    }
+}, 5 * 60 * 1000); // Wait 5 minutes before first cleanup
 
 // Global error handler
 app.use((error, req, res, next) => {
