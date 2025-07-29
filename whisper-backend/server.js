@@ -39,6 +39,8 @@ const PRODUCT_MAPPING = {
     "20.00": 'pdt_FH53QV66vuRKYdLX99yjF'
 };
 
+// cleaning logic setup done 
+
 // Fallback product ID if no matching amount is found
 const DEFAULT_USD_PRODUCT_ID = process.env.DODO_DEFAULT_PRODUCT;
 
