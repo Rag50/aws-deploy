@@ -14,9 +14,8 @@ const OpenAI = require('openai');
 const { getFirestore, doc, setDoc, getDoc, updateDoc } = require('firebase-admin/firestore');
 const admin = require('firebase-admin');
 const { getAuth } = require("firebase-admin/auth");
-const AWS = require('aws-sdk');
+const { S3Client, PutObjectCommand, DeleteObjectCommand } = require('@aws-sdk/client-s3');
 const temp = require('temp');
-const { BlobServiceClient } = require('@azure/storage-blob');
 const streamifier = require('streamifier');
 const nodemailer = require('nodemailer');
 const dotenv = require('dotenv');
@@ -159,6 +158,15 @@ admin.initializeApp({
 const cron = require('node-cron');
 
 const db = getFirestore();
+
+// Configure AWS S3
+const s3Client = new S3Client({
+    region: process.env.AWS_REGION || 'us-east-1',
+    credentials: {
+        accessKeyId: process.env.AWS_ACCESS_KEY_ID,
+        secretAccessKey: process.env.AWS_SECRET_ACCESS_KEY,
+    }
+});
 
 
 const app = express();
@@ -744,11 +752,6 @@ Cashfree.XClientId = process.env.CASHFREE_APPID;
 Cashfree.XClientSecret = process.env.CASHFREE_SECRETKEY;
 Cashfree.XEnvironment = Cashfree.Environment.SANDBOX;
 
-
-
-const blobServiceClient = BlobServiceClient.fromConnectionString(process.env.AZURE_STORE);
-const containerClient = blobServiceClient.getContainerClient('capsuservideos');
-
 const storage = multer.diskStorage({
     destination: (req, file, cb) => {
         // Create uploads directory if it doesn't exist
@@ -823,7 +826,7 @@ const handleMulterError = (error, req, res, next) => {
     next(error);
 };
 
-async function uploadToAzure(filePath, customFilename = null) {
+async function uploadToS3(filePath, customFilename = null) {
     try {
         // Check if file exists before uploading
         if (!fs.existsSync(filePath)) {
@@ -835,35 +838,53 @@ async function uploadToAzure(filePath, customFilename = null) {
             throw new Error(`File is empty: ${filePath}`);
         }
 
-        const blobName = customFilename || path.basename(filePath);
+        const fileName = customFilename || path.basename(filePath);
+        const bucketName = process.env.S3_BUCKET_NAME || 'caps-user-videos';
 
-        console.log(`Uploading file: ${filePath} as: ${blobName} (size: ${fileStats.size} bytes)`);
-
-        const blockBlobClient = containerClient.getBlockBlobClient(blobName);
+        console.log(`Uploading file: ${filePath} as: ${fileName} (size: ${fileStats.size} bytes)`);
 
         const fileStream = fs.createReadStream(filePath);
-        const uploadBlobResponse = await blockBlobClient.uploadStream(fileStream);
 
-        console.log(`Upload completed. Blob name: ${blobName}, URL: ${blockBlobClient.url}`);
+        const uploadCommand = new PutObjectCommand({
+            Bucket: bucketName,
+            Key: fileName,
+            Body: fileStream,
+            ContentType: 'video/mp4',
+            ACL: 'public-read'
+        });
+
+        const result = await s3Client.send(uploadCommand);
+
+        const fileUrl = `https://${bucketName}.s3.${process.env.AWS_REGION || 'us-east-1'}.amazonaws.com/${fileName}`;
+
+        console.log(`Upload completed. S3 Key: ${fileName}, URL: ${fileUrl}`);
 
         return {
-            url: blockBlobClient.url,
-            blobName: blobName,
-            uploadResponse: uploadBlobResponse
+            url: fileUrl,
+            key: fileName,
+            bucket: bucketName,
+            etag: result.ETag
         };
     } catch (error) {
-        console.error('Error uploading to Azure:', error);
+        console.error('Error uploading to S3:', error);
         throw error;
     }
 }
 
-// Helper function to delete file from Azure Blob Storage
-async function deleteFromAzure(containerName, blobName) {
-    const containerClient = blobServiceClient.getContainerClient(containerName);
-    const blockBlobClient = containerClient.getBlockBlobClient(blobName);
+// Helper function to delete file from S3
+async function deleteFromS3(bucketName, key) {
+    try {
+        const deleteCommand = new DeleteObjectCommand({
+            Bucket: bucketName,
+            Key: key
+        });
 
-    await blockBlobClient.delete();
-    console.log(`Blob ${blobName} successfully deleted from container ${containerName}`);
+        await s3Client.send(deleteCommand);
+        console.log(`Object ${key} successfully deleted from S3 bucket ${bucketName}`);
+    } catch (error) {
+        console.error(`Error deleting object ${key} from S3:`, error);
+        throw error;
+    }
 }
 
 const transporter = nodemailer.createTransport({
@@ -941,13 +962,13 @@ app.post('/api/process-video', upload.single('video'), handleMulterError, async 
         let videoUpload;
         if (wordLayout == 'Shuffled text') {
             const processedFilename = `processed_${originalFilename}`;
-            videoUpload = await uploadToAzure(outputPath, processedFilename);
+            videoUpload = await uploadToS3(outputPath, processedFilename);
         } else {
-            videoUpload = await uploadToAzure(videoFilePath, originalFilename);
+            videoUpload = await uploadToS3(videoFilePath, originalFilename);
         }
 
 
-        const srtUpload = await uploadToAzure(srtFilePath, `${originalNameWithoutExt}.srt`);
+        const srtUpload = await uploadToS3(srtFilePath, `${originalNameWithoutExt}.srt`);
         console.log(videoUpload, srtUpload)
 
 
@@ -972,7 +993,7 @@ app.post('/api/process-video', upload.single('video'), handleMulterError, async 
             rawData: transcription.words,
             inputFile: videoUpload.url,
             lang: transcription.language,
-            key: videoUpload.blobName,
+            key: videoUpload.key,
             srt: srtUpload.url,
             originalFilename: originalFilename,
         });
@@ -1026,9 +1047,9 @@ app.post('/api/change-style', upload.single('video'), handleMulterError, async (
             }
 
             // Process deletions
-            if (req.body.deleteType === 'azure-blob') {
-                await deleteFromAzure(req.body.containerName, req.body.blobName);
-                console.log(`Deleted Azure blob: ${req.body.blobName}`);
+            if (req.body.deleteType === 's3-object') {
+                await deleteFromS3(req.body.bucketName, req.body.key);
+                console.log(`Deleted S3 object: ${req.body.key}`);
             }
             else if (req.body.deleteType === 'firestore-doc') {
                 const docRef = admin.firestore().doc(req.body.docPath);
@@ -1039,7 +1060,7 @@ app.post('/api/change-style', upload.single('video'), handleMulterError, async (
             return res.status(204).end();
         }
 
-        const { inputVideo, font, color, xPosition, yPosition, srtUrl, Fontsize, userdata, uid, save, keyS3, transcriptions, isOneword, videoResolution, soundEffects } = req.body;
+        const { inputVideo, font, color, xPosition, yPosition, srtUrl, Fontsize, userdata, uid, keyS3, transcriptions, isOneword, videoResolution, soundEffects } = req.body;
         if (!inputVideo || !font || !color || !xPosition || !yPosition || !srtUrl || !Fontsize || !userdata || !uid) {
             return res.status(400).json({ error: 'Missing required fields in the request body' });
         }
@@ -1180,57 +1201,57 @@ app.post('/api/change-style', upload.single('video'), handleMulterError, async (
 
         console.log(`Output video file created successfully: ${outputFilePath} (size: ${outputFileStats.size} bytes)`);
 
-        // save logic  old one 
-        if (save) {
+        // Always save videos to S3 for both free and paid users
+        outputUpload = await uploadToS3(outputFilePath);
+        outputVideoUrl = outputUpload.url;
 
-            outputUpload = await uploadToAzure(outputFilePath);
-            outputVideoUrl = outputUpload.url;
+        // Schedule original input video for deletion after 1 hour (both free and paid users)
+        const deletionTimeMs = 60 * 60000; // 1 hour for all users
 
-
+        if (keyS3) {
             await db.collection('deletionTasks').add({
-                type: 'azure-blob',
-                containerName: 'capsuservideos',
-                blobName: keyS3,
-                deleteAt: admin.firestore.Timestamp.fromDate(
-                    new Date(Date.now() + (userdata.usertype === 'free' ? 15 : 20) * 60000)
-                )
-            });
-
-
-            await db.collection('deletionTasks').add({
-                type: 'azure-blob',
-                containerName: 'capsuservideos',
-                blobName: outputUpload.blobName,
-                deleteAt: admin.firestore.Timestamp.fromDate(
-                    new Date(Date.now() + (userdata.usertype === 'free' ? 15 : 20) * 60000)
-                )
-            });
-
-            const videos = userdata.videos || [];
-
-
-            const newDocRef = await db.collection('users').doc(uid).collection('videos').add({
-                videoUrl: videoPath,
-                srt: srtUrl,
-                fontadded: font,
-                createdAt: admin.firestore.FieldValue.serverTimestamp(),
+                type: 's3-object',
+                bucketName: process.env.S3_BUCKET_NAME || 'caps-user-videos',
                 key: keyS3,
-                transcriptions: transcriptions
-            });
-            const docId = newDocRef.id;
-            const docPath = `users/${uid}/videos`
-            await db.collection('deletionTasks').add({
-                type: 'firestore-doc',
-                docPath: `users/${uid}/videos/${newDocRef.id}`,
                 deleteAt: admin.firestore.Timestamp.fromDate(
-                    new Date(Date.now() + (userdata.usertype === 'free' ? 15 : 20) * 60000))
+                    new Date(Date.now() + deletionTimeMs)
+                )
             });
-
-        } else {
-
-            outputUpload = await uploadToAzure(outputFilePath);
-            outputVideoUrl = outputUpload.url;
         }
+
+        // Schedule output video for deletion after 1 hour
+        await db.collection('deletionTasks').add({
+            type: 's3-object',
+            bucketName: process.env.S3_BUCKET_NAME || 'caps-user-videos',
+            key: outputUpload.key,
+            deleteAt: admin.firestore.Timestamp.fromDate(
+                new Date(Date.now() + deletionTimeMs)
+            )
+        });
+
+        // Save video metadata to user's collection
+        const newDocRef = await db.collection('users').doc(uid).collection('videos').add({
+            videoUrl: videoPath,
+            outputVideoUrl: outputVideoUrl,
+            srt: srtUrl,
+            fontadded: font,
+            createdAt: admin.firestore.FieldValue.serverTimestamp(),
+            key: keyS3,
+            outputKey: outputUpload.key,
+            transcriptions: transcriptions,
+            expiresAt: admin.firestore.Timestamp.fromDate(
+                new Date(Date.now() + deletionTimeMs)
+            )
+        });
+
+        // Schedule Firestore document for deletion after 1 hour
+        await db.collection('deletionTasks').add({
+            type: 'firestore-doc',
+            docPath: `users/${uid}/videos/${newDocRef.id}`,
+            deleteAt: admin.firestore.Timestamp.fromDate(
+                new Date(Date.now() + deletionTimeMs)
+            )
+        });
 
 
         const videoDuration = await getVideoDuration(videoPath);
@@ -2693,9 +2714,9 @@ app.post('/api/change-style-remotion', upload.single('video'), handleMulterError
                 return res.status(403).json({ error: 'Invalid signature' });
             }
 
-            if (req.body.deleteType === 'azure-blob') {
-                await deleteFromAzure(req.body.containerName, req.body.blobName);
-                console.log(`Deleted Azure blob: ${req.body.blobName}`);
+            if (req.body.deleteType === 's3-object') {
+                await deleteFromS3(req.body.bucketName, req.body.key);
+                console.log(`Deleted S3 object: ${req.body.key}`);
             }
             else if (req.body.deleteType === 'firestore-doc') {
                 const docRef = admin.firestore().doc(req.body.docPath);
@@ -2706,7 +2727,7 @@ app.post('/api/change-style-remotion', upload.single('video'), handleMulterError
             return res.status(204).end();
         }
 
-        const { inputVideo, font, color, xPosition, yPosition, srtUrl, Fontsize, userdata, uid, save, keyS3, transcriptions, isOneword, videoResolution, soundEffects } = req.body;
+        const { inputVideo, font, color, xPosition, yPosition, srtUrl, Fontsize, userdata, uid, keyS3, transcriptions, isOneword, videoResolution, soundEffects } = req.body;
 
         if (!inputVideo || !font || !color || !xPosition || !yPosition || !srtUrl || !Fontsize || !userdata || !uid) {
             return res.status(400).json({ error: 'Missing required fields in the request body' });
@@ -2768,54 +2789,59 @@ app.post('/api/change-style-remotion', upload.single('video'), handleMulterError
             throw new Error('Remotion rendering failed');
         }
 
-        // Upload to Azure
-        let outputUpload;
-        let outputVideoUrl;
+        // Always upload to S3 for both free and paid users
+        outputUpload = await uploadToS3(outputFilePath);
+        outputVideoUrl = outputUpload.url;
 
-        if (save) {
-            outputUpload = await uploadToAzure(outputFilePath);
-            outputVideoUrl = outputUpload.url;
+        // Schedule original input video for deletion after 1 hour (both free and paid users)
+        const deletionTimeMs = 60 * 60000; // 1 hour for all users
 
-            // Set up deletion tasks
+        // Schedule original input video for deletion
+        if (keyS3) {
             await db.collection('deletionTasks').add({
-                type: 'azure-blob',
-                containerName: 'capsuservideos',
-                blobName: keyS3,
-                deleteAt: admin.firestore.Timestamp.fromDate(
-                    new Date(Date.now() + (userdata.usertype === 'free' ? 15 : 20) * 60000)
-                )
-            });
-
-            await db.collection('deletionTasks').add({
-                type: 'azure-blob',
-                containerName: 'capsuservideos',
-                blobName: outputUpload.blobName,
-                deleteAt: admin.firestore.Timestamp.fromDate(
-                    new Date(Date.now() + (userdata.usertype === 'free' ? 15 : 20) * 60000)
-                )
-            });
-
-            // Save to Firestore
-            const newDocRef = await db.collection('users').doc(uid).collection('videos').add({
-                videoUrl: videoPath,
-                srt: srtUrl,
-                fontadded: font,
-                createdAt: admin.firestore.FieldValue.serverTimestamp(),
+                type: 's3-object',
+                bucketName: process.env.S3_BUCKET_NAME || 'caps-user-videos',
                 key: keyS3,
-                transcriptions: transcriptions,
-                processedWith: 'remotion'
-            });
-
-            await db.collection('deletionTasks').add({
-                type: 'firestore-doc',
-                docPath: `users/${uid}/videos/${newDocRef.id}`,
                 deleteAt: admin.firestore.Timestamp.fromDate(
-                    new Date(Date.now() + (userdata.usertype === 'free' ? 15 : 20) * 60000))
+                    new Date(Date.now() + deletionTimeMs)
+                )
             });
-        } else {
-            outputUpload = await uploadToAzure(outputFilePath);
-            outputVideoUrl = outputUpload.url;
         }
+
+        // Schedule output video for deletion
+        await db.collection('deletionTasks').add({
+            type: 's3-object',
+            bucketName: process.env.S3_BUCKET_NAME || 'caps-user-videos',
+            key: outputUpload.key,
+            deleteAt: admin.firestore.Timestamp.fromDate(
+                new Date(Date.now() + deletionTimeMs)
+            )
+        });
+
+        // Save video metadata to user's collection
+        const newDocRef = await db.collection('users').doc(uid).collection('videos').add({
+            videoUrl: videoPath,
+            outputVideoUrl: outputVideoUrl,
+            srt: srtUrl,
+            fontadded: font,
+            createdAt: admin.firestore.FieldValue.serverTimestamp(),
+            key: keyS3,
+            outputKey: outputUpload.key,
+            transcriptions: transcriptions,
+            processedWith: 'remotion',
+            expiresAt: admin.firestore.Timestamp.fromDate(
+                new Date(Date.now() + deletionTimeMs)
+            )
+        });
+
+        // Schedule Firestore document for deletion
+        await db.collection('deletionTasks').add({
+            type: 'firestore-doc',
+            docPath: `users/${uid}/videos/${newDocRef.id}`,
+            deleteAt: admin.firestore.Timestamp.fromDate(
+                new Date(Date.now() + deletionTimeMs)
+            )
+        });
 
         // Update user video minutes
         const userRef = db.collection('users').doc(uid);
@@ -3078,6 +3104,63 @@ app.use((error, req, res, next) => {
 // Handle 404 errors
 app.use((req, res) => {
     res.status(404).json({ error: 'Endpoint not found' });
+});
+
+// Cron job to process deletion tasks every 5 minutes
+cron.schedule('*/5 * * * *', async () => {
+    console.log('Running deletion task cleanup...');
+    try {
+        const now = admin.firestore.Timestamp.now();
+        const deletionTasksRef = db.collection('deletionTasks');
+        const expiredTasks = await deletionTasksRef
+            .where('deleteAt', '<=', now)
+            .limit(50) // Process in batches to avoid overwhelming the system
+            .get();
+
+        if (expiredTasks.empty) {
+            console.log('No deletion tasks to process');
+            return;
+        }
+
+        const batch = db.batch();
+        let deletedCount = 0;
+        let errorCount = 0;
+
+        for (const doc of expiredTasks.docs) {
+            const task = doc.data();
+            
+            try {
+                if (task.type === 's3-object') {
+                    await deleteFromS3(task.bucketName, task.key);
+                    console.log(`Deleted S3 object: ${task.key} from bucket: ${task.bucketName}`);
+                } else if (task.type === 'firestore-doc') {
+                    const docRef = admin.firestore().doc(task.docPath);
+                    await docRef.delete();
+                    console.log(`Deleted Firestore document: ${task.docPath}`);
+                }
+                
+                // Mark the deletion task for removal
+                batch.delete(doc.ref);
+                deletedCount++;
+            } catch (error) {
+                console.error(`Error processing deletion task ${doc.id}:`, error);
+                errorCount++;
+                
+                // Still delete the task even if deletion failed to avoid infinite retries
+                batch.delete(doc.ref);
+            }
+        }
+
+        // Commit the batch to remove processed tasks
+        await batch.commit();
+        
+        if (deletedCount > 0 || errorCount > 0) {
+            console.log(`Deletion cleanup completed. Processed: ${deletedCount}, Errors: ${errorCount}`);
+        }
+        
+    } catch (error) {
+        console.error('Error in deletion cleanup cron job:', error);
+    }
 });
 
 app.listen(3000, () => console.log('Server running on port 3000'));
